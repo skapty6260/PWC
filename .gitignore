@@ -1,0 +1,8 @@
+.directory
+.vscode
+.cache
+build
+build_*
+subprojects/*
+!subprojects/packagefiles
+!subprojects/*wrap
