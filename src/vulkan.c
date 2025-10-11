@@ -28,6 +28,13 @@ static uint32_t rate_device_suitability(VkPhysicalDevice device) {
         score = 0;
     }
 
+    // Check device support required queue families
+    QueueFamilyIndices indices = find_queue_families(device);
+    if (!indices.is_set) {
+        fprintf(stderr, "GPU does not support required queue families\n");
+        score = 0;
+    }
+
     return score;
 }
 
@@ -61,6 +68,14 @@ static void pick_physical_device(struct pwc_vulkan *vulkan) {
     }
 
     vulkan->device = device;
+
+    // Log info
+    VkPhysicalDeviceProperties properties;
+    vkGetPhysicalDeviceProperties(device, &properties);
+    printf(
+        "Selected device %s:\nDevice Id: %u\nDevice Type: %u\nVendor Id: %u\nDriver Version: %u\n",
+        properties.deviceName, properties.deviceID, properties.deviceType, properties.vendorID, properties.driverVersion
+    );
 }
 
 static void create_vulkan_instance(struct pwc_vulkan *vulkan) {
@@ -87,6 +102,30 @@ static void create_vulkan_instance(struct pwc_vulkan *vulkan) {
 
 static void clean_vulkan_instance(struct pwc_vulkan *vulkan) {
     vkDestroyInstance(vulkan->instance, NULL);
+}
+
+QueueFamilyIndices find_queue_families(VkPhysicalDevice device) {
+    QueueFamilyIndices indices;
+
+    uint32_t count = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &count, NULL);
+    if (count == 0) {
+        fprintf(stderr, "failed to get device queue family properties\n");
+        exit(EXIT_FAILURE);
+    }
+
+    VkQueueFamilyProperties props[count];
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &count, props);
+    
+    for (int i = 0; i < count; i++) {
+        if (props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+            indices.graphics_family = i;
+            indices.is_set = true;
+            break;
+        }
+    }
+
+    return indices;
 }
 
 int init_vulkan(struct pwc_vulkan *vulkan, uint32_t drm_fd) {
