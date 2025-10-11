@@ -15,11 +15,7 @@
 #include <xf86drmMode.h>
 #include <gbm.h>
 
-#define GL_GLEXT_PROTOTYPES 1
-#include <GLES2/gl2.h>
-#include <GLES2/gl2ext.h>
-#include <EGL/egl.h>
-#include <EGL/eglext.h>
+#include <pwc/vulkan.h>
 
 drmModeConnectorPtr getFirstConnectedConnector(drmModeResPtr mode_resources, int fd) {
     printf("Num connectors: %d\n", mode_resources->count_connectors);  // Debug: Print count
@@ -58,17 +54,6 @@ drmModeModeInfoPtr getPreferredMode(drmModeConnectorPtr connector, int fd) {
     return NULL;
 }
 
-struct gl {
-	EGLDisplay display;
-	EGLConfig config;
-	EGLContext context;
-	EGLSurface surface;
-	GLuint program;
-	GLint modelviewmatrix, modelviewprojectionmatrix, normalmatrix;
-	GLuint vbo;
-	GLuint positionsoffset, colorsoffset, normalsoffset;
-};
-
 struct drm {
     int fd;
 
@@ -78,11 +63,6 @@ struct drm {
 
     drmModeEncoder *encoder;
     drmModeCrtc *crtc;
-};
-
-struct gbm {
-    struct gbm_device *device;
-    struct gbm_surface *surface;
 };
 
 static int framebuffer_draw_screen(struct drm *drm) {
@@ -201,106 +181,11 @@ static int init_drm(struct drm *drm, int argc, char **argv) {
     return EXIT_SUCCESS;
 }
 
-static int init_gbm(struct gbm *gbm, int drm_fd, uint32_t width, uint32_t height) {
-    gbm->device = gbm_create_device(drm_fd);
-    printf("Creating gbm device on fd: %d\n", drm_fd);
-
-    gbm->surface = gbm_surface_create(
-        gbm->device,
-        width,
-        height,
-        GBM_FORMAT_ARGB8888,
-        GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING
-    );
-
-    if (gbm->surface == NULL) {
-        fprintf(stderr, "failed to create gbm surface\n");
-		return EXIT_FAILURE;
-    }
-
-    return EXIT_SUCCESS;
-}
-
-
-// TODO: Rework with drm
-static int init_gl(struct gl *gl, struct gbm *gbm) {
-    EGLint major, minor, n;
-    // GLuint vertex_shader, fragment_shader;
-    // GLint ret;
-
-    static const EGLint context_attribs[] = {
-		EGL_CONTEXT_CLIENT_VERSION, 2,
-		EGL_NONE
-	};
-
-	static const EGLint config_attribs[] = {
-		EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
-		EGL_RED_SIZE, 1,
-		EGL_GREEN_SIZE, 1,
-		EGL_BLUE_SIZE, 1,
-		EGL_ALPHA_SIZE, 0,
-		EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
-		EGL_NONE
-	};
-
-    PFNEGLGETPLATFORMDISPLAYEXTPROC get_platform_display = NULL;
-	get_platform_display =
-		(void *) eglGetProcAddress("eglGetPlatformDisplayEXT");
-	assert(get_platform_display != NULL);
-
-    gl->display = get_platform_display(EGL_PLATFORM_GBM_KHR, gbm->device, NULL);
-
-	if (!eglInitialize(gl->display, &major, &minor)) {
-		printf("failed to initialize\n");
-		return EXIT_FAILURE;
-	}
-
-	printf("Using display %p with EGL version %d.%d\n",
-			gl->display, major, minor);
-
-	printf("EGL Version \"%s\"\n", eglQueryString(gl->display, EGL_VERSION));
-	printf("EGL Vendor \"%s\"\n", eglQueryString(gl->display, EGL_VENDOR));
-	printf("EGL Extensions \"%s\"\n", eglQueryString(gl->display, EGL_EXTENSIONS));
-
-	if (!eglBindAPI(EGL_OPENGL_ES_API)) {
-		printf("failed to bind api EGL_OPENGL_ES_API\n");
-		return EXIT_FAILURE;
-	}
-
-	if (!eglChooseConfig(gl->display, config_attribs, &gl->config, 1, &n) || n != 1) {
-		printf("failed to choose config: %d\n", n);
-		return EXIT_FAILURE;
-	}
-
-	gl->context = eglCreateContext(gl->display, gl->config,
-			EGL_NO_CONTEXT, context_attribs);
-	if (gl->context == NULL) {
-		printf("failed to create context\n");
-		return EXIT_FAILURE;
-	}
-
-	gl->surface = eglCreateWindowSurface(gl->display, gl->config, gbm->surface, NULL);
-	if (gl->surface == EGL_NO_SURFACE) {
-		printf("Failed to create egl surface\n");
-		return EXIT_FAILURE;
-	}
-
-	/* connect the context to the surface */
-	eglMakeCurrent(gl->display, gl->surface, gl->surface, gl->context);
-
-	printf("GL Extensions: \"%s\"\n", glGetString(GL_EXTENSIONS));
-
-	return EXIT_SUCCESS;
-}
-
-static void cleanup(struct drm *drm, struct gbm *gbm, struct gl *gl) {
+static void cleanup(struct drm *drm) {
     drmModeFreeConnector(drm->connector);
     drmModeFreeResources(drm->mode_resources);
     close(drm->fd);
     free(drm);
-
-    free(gbm);
-    free(gl);
 }
 
 int main(int argc, char **argv) {
@@ -314,19 +199,15 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Failed to init drm\n");
         return EXIT_FAILURE;
     }
-    
-    // Init gbm
-    struct gbm *gbm = calloc(1, sizeof(struct gbm));
-    if (init_gbm(gbm, drm->fd, drm->preferred_mode->hdisplay, drm->preferred_mode->vdisplay)) {
-        fprintf(stderr, "Failed to init gbm\n");
+
+    // Init vulkan
+    struct pwc_vulkan *vulkan = calloc(1, sizeof(struct pwc_vulkan));
+    if (init_vulkan(vulkan, drm->fd)) {
+        fprintf(stderr, "Failed to init vulkan");
         return EXIT_FAILURE;
     }
 
-    struct gl *gl = calloc(1, sizeof(struct gl));
-    if (init_gl(gl, gbm)) {
-        fprintf(stderr, "Failed to init gl\n");
-        return EXIT_FAILURE;
-    }
+    printf("Succesfully initialized Vulkan\n");
 
     // Draw screen
     if (framebuffer_draw_screen(drm)) {
@@ -334,6 +215,6 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
-    cleanup(drm, gbm, gl);
+    cleanup(drm);
     return EXIT_SUCCESS;
 }
