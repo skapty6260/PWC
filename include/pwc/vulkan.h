@@ -1,6 +1,7 @@
 #ifndef _PWC_VULKAN_H
 #define _PWC_VULKAN_H
 
+#include <gbm.h>
 #include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -9,8 +10,20 @@
 
 struct pwc_vulkan {
     VkInstance instance;
-    VkPhysicalDevice device;
+    VkPhysicalDevice physicalDevice;
+    VkDevice device;
     VkDisplayKHR display;
+    VkQueue graphics_queue;
+    VkRenderPass render_pass;
+    VkCommandPool command_pool;
+    VkSemaphore semaphore;
+
+    // FrameBuffer (gbm)
+    struct gbm_device *gbm_device;
+    struct gbm_bo *gbm_bo;
+    uint32_t fb;
+
+    VkFormat image_format;
 };
 
 typedef struct QueueFamilyIndices {

@@ -1,6 +1,7 @@
 sources = files(
     'main.c',
-    'vulkan.c'
+    'vulkan.c',
+    'drm.c'
 )
 
 wayland_server = dependency('wayland-server', version: '>=1.21.0')
@@ -10,6 +11,7 @@ wayland_protos = dependency('wayland-protocols', version: '>=1.41', default_opti
 drm = dependency('libdrm')
 vulkan_dep = dependency('vulkan')
 mathlib = cc.find_library('m', required: false)
+gbm_dep = dependency('gbm')
 
 deps = [
     wayland_client,
@@ -17,6 +19,7 @@ deps = [
     wayland_protos,
     wayland_server,
     drm,
+    gbm_dep,
     vulkan_dep,
     mathlib
 ]
