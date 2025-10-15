@@ -1,10 +1,12 @@
-#include <pwc/vulkan.h>
+#include <pwc/render/vulkan.h>
 #include <fcntl.h>
 #include <gbm.h>
-#include <pwc/drm.h>
+#include <pwc/render/drm.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <vulkan/vulkan_core.h>
+#include <xf86drm.h>
 
 drmModeConnectorPtr getFirstConnectedConnector(drmModeResPtr mode_resources, int fd) {
     printf("Num connectors: %d\n", mode_resources->count_connectors);  // Debug: Print count
@@ -44,6 +46,9 @@ drmModeModeInfoPtr getPreferredMode(drmModeConnectorPtr connector, int fd) {
 }
 
 void cleanup_drm(struct pwc_drm *drm) {
+    if (drm->crtc) drmModeSetCrtc(drm->fd, drm->crtc->crtc_id, 0, 0, 0, NULL, 0, NULL);  // Disable CRTC
+    drmSetMaster(drm->fd);  // Release master
+    if (drm->encoder) drmModeFreeEncoder(drm->encoder);
     drmModeFreeConnector(drm->connector);
     drmModeFreeResources(drm->mode_resources);
     close(drm->fd);
@@ -109,12 +114,13 @@ int init_drm(struct pwc_drm *drm, char path[32], struct pwc_vulkan *vulkan) {
         return EXIT_FAILURE;
     }
 
-    vulkan->gbm_device = gbm_create_device(drm->fd);
+    vulkan->image_format = VK_FORMAT_R8G8B8A8_SRGB;
+    vulkan->width = drm->preferred_mode->hdisplay;
+    vulkan->height = drm->preferred_mode->vdisplay;
     if (init_vulkan(vulkan, drm->fd)) {
         fprintf(stderr, "Failed to init vulkan");
         return EXIT_FAILURE;
     }
-    vulkan->image_format = VK_FORMAT_R8G8B8A8_SRGB;
 
     return EXIT_SUCCESS;
 }

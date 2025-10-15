@@ -1,13 +1,10 @@
-#include <pwc/vulkan.h>
-
-#include <stdbool.h>
-#include <stdint.h>
+#include <pwc/render/vulkan/vk-core.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <vulkan/vulkan.h>
+#include <string.h>
 #include <vulkan/vulkan_core.h>
 
-#define APP_NAME "pwc vulkan wayland compositor"
+// Все функции связанные с ядром вулкана структуры вулкана, его инициализацией, не переиспользуемыми функциями
 
 static uint32_t rate_device_suitability(VkPhysicalDevice physical_device) {
     VkPhysicalDeviceProperties properties;
@@ -35,34 +32,27 @@ static uint32_t rate_device_suitability(VkPhysicalDevice physical_device) {
         score = 0;
     }
 
+    // Check extensions support
+    uint32_t count;
+    bool dmaBuf_supported = false;
+    vkEnumerateDeviceExtensionProperties(physical_device, NULL, &count, NULL);
+    VkExtensionProperties *exts = malloc(count * sizeof(VkExtensionProperties));
+    vkEnumerateDeviceExtensionProperties(physical_device, NULL, &count, exts);
+    for (uint32_t i = 0; i < count; i++) {
+        if (strcmp(exts[i].extensionName, "VK_KHR_external_memory_fd") == 0) {
+            dmaBuf_supported = true;
+        }
+    }
+    if (!dmaBuf_supported) {
+        fprintf(stderr, "GPU doesn't support dma_buffers fd\n");
+        score = 0;
+    }
+    free(exts);
+
     return score;
 }
 
-QueueFamilyIndices find_queue_families(VkPhysicalDevice physical_device) {
-    QueueFamilyIndices indices;
-
-    uint32_t count = 0;
-    vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &count, NULL);
-    if (count == 0) {
-        fprintf(stderr, "failed to get device queue family properties\n");
-        exit(EXIT_FAILURE);
-    }
-
-    VkQueueFamilyProperties props[count];
-    vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &count, props);
-    
-    for (int i = 0; i < count; i++) {
-        if (props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-            indices.graphics_family = i;
-            indices.is_set = true;
-            break;
-        }
-    }
-
-    return indices;
-}
-
-static void pick_physical_device(struct pwc_vulkan *vulkan) {
+void pick_physical_device(struct pwc_vulkan *vulkan) {
     // Get devices count and check if at least 1 available
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(vulkan->instance, &deviceCount, NULL);
@@ -100,9 +90,51 @@ static void pick_physical_device(struct pwc_vulkan *vulkan) {
         "Selected device %s:\nDevice Id: %u\nDevice Type: %u\nVendor Id: %u\nDriver Version: %u\n",
         properties.deviceName, properties.deviceID, properties.deviceType, properties.vendorID, properties.driverVersion
     );
+
+    vkGetPhysicalDeviceMemoryProperties(vulkan->physicalDevice, &vulkan->memory_properties);
+    printf("Memory types available: %u\n", vulkan->memory_properties.memoryTypeCount); 
 }
 
-static void create_vulkan_instance(struct pwc_vulkan *vulkan) {
+void create_logical_device(struct pwc_vulkan *vulkan) {
+    QueueFamilyIndices indices = find_queue_families(vulkan->physicalDevice);
+    VkPhysicalDeviceFeatures features;
+    vkGetPhysicalDeviceFeatures(vulkan->physicalDevice, &features);
+
+    VkDeviceQueueCreateInfo queueCreateInfo = {
+        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+        .queueFamilyIndex = indices.graphics_family,
+        .queueCount = 1
+    };
+
+    float queuePriority = 1.0f;
+    queueCreateInfo.pQueuePriorities = &queuePriority;
+
+    const char *device_extensions[] = {
+        "VK_KHR_external_memory",      // Base for external memory (core in 1.1, but enable)
+        "VK_KHR_external_memory_fd",   // Import/export via POSIX FD (DMA-BUF)
+        // Optional but recommended for explicit DMA-BUF:
+        "VK_EXT_external_memory_dma_buf",  // Handles DMA-BUF modifiers/formats (Mesa/NVIDIA support)
+        // If sync needed (e.g., between queues): "VK_KHR_external_semaphore_fd"
+    };
+
+    VkDeviceCreateInfo createInfo = {
+        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .pQueueCreateInfos = &queueCreateInfo,
+        .queueCreateInfoCount = 1,
+        .pEnabledFeatures = &features,
+        .enabledExtensionCount = sizeof(device_extensions) / sizeof(char*),
+        .ppEnabledExtensionNames = device_extensions,
+    };
+
+    if (vkCreateDevice(vulkan->physicalDevice, &createInfo, NULL, &vulkan->device) != VK_SUCCESS) {
+        fprintf(stderr, "Failed to create logical device\n");
+        exit(EXIT_FAILURE);
+    }
+
+    vkGetDeviceQueue(vulkan->device, indices.graphics_family, 0, &vulkan->graphics_queue);
+}
+
+void create_vulkan_instance(struct pwc_vulkan *vulkan) {
     VkApplicationInfo appInfo = {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pApplicationName = APP_NAME,
@@ -124,41 +156,7 @@ static void create_vulkan_instance(struct pwc_vulkan *vulkan) {
     }
 }
 
-static void clean_vulkan_instance(struct pwc_vulkan *vulkan) {
-    vkDestroyInstance(vulkan->instance, NULL);
-}
-
-static void create_logical_device(struct pwc_vulkan *vulkan) {
-    QueueFamilyIndices indices = find_queue_families(vulkan->physicalDevice);
-    VkPhysicalDeviceFeatures features;
-    vkGetPhysicalDeviceFeatures(vulkan->physicalDevice, &features);
-
-    VkDeviceQueueCreateInfo queueCreateInfo = {
-        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-        .queueFamilyIndex = indices.graphics_family,
-        .queueCount = 1
-    };
-
-    float queuePriority = 1.0f;
-    queueCreateInfo.pQueuePriorities = &queuePriority;
-
-    VkDeviceCreateInfo createInfo = {
-        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .pQueueCreateInfos = &queueCreateInfo,
-        .queueCreateInfoCount = 1,
-        .pEnabledFeatures = &features,
-        .enabledExtensionCount = 0
-    };
-
-    if (vkCreateDevice(vulkan->physicalDevice, &createInfo, NULL, &vulkan->device) != VK_SUCCESS) {
-        fprintf(stderr, "Failed to create logical device\n");
-        exit(EXIT_FAILURE);
-    }
-
-    vkGetDeviceQueue(vulkan->device, indices.graphics_family, 0, &vulkan->graphics_queue);
-}
-
-static void create_render_pass(struct pwc_vulkan *vulkan) {
+void create_render_pass(struct pwc_vulkan *vulkan) {
     VkAttachmentDescription colorAttachment = {
         .format = vulkan->image_format,
         .samples = 1,
@@ -203,20 +201,20 @@ static void create_render_pass(struct pwc_vulkan *vulkan) {
     }
 }
 
-static void create_command_pool(struct pwc_vulkan *vulkan) {
+void create_command_pool(struct pwc_vulkan *vulkan) {
     VkCommandPoolCreateInfo commandPoolCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
         .queueFamilyIndex = 0,
         .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT
     };
 
-    if (vkCreateCommandPool(vulkan->device, &commandPoolCreateInfo, NULL, &vulkan->command_pool) != VK_SUCCESS) {
+    if (vkCreateCommandPool(vulkan->device, &commandPoolCreateInfo, NULL, &vulkan->cmd_pool) != VK_SUCCESS) {
         fprintf(stderr, "Failed to create vulkan command pool\n");
         exit(EXIT_FAILURE);
     }
-}
+};
 
-static void create_semaphore(struct pwc_vulkan *vulkan) {
+void create_semaphore(struct pwc_vulkan *vulkan) {
     VkSemaphoreCreateInfo semaphoreCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
     };
@@ -227,24 +225,3 @@ static void create_semaphore(struct pwc_vulkan *vulkan) {
     }
 }
 
-static void create_graphics_pipeline(struct pwc_vulkan *vulkan) {
-
-}
-
-// Swapchain нужен только для extensions (GLFW) для DRM похуй братка.
-
-void cleanup_vulkan(struct pwc_vulkan *vulkan) {
-    vkDestroyDevice(vulkan->device, NULL);
-    vkDestroyInstance(vulkan->instance, NULL);
-}
-
-int init_vulkan(struct pwc_vulkan *vulkan, uint32_t drm_fd) {
-    create_vulkan_instance(vulkan);
-    pick_physical_device(vulkan);
-    create_logical_device(vulkan);
-    create_render_pass(vulkan);
-    create_command_pool(vulkan);
-    create_semaphore(vulkan);
-
-    return EXIT_SUCCESS;
-};

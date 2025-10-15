@@ -1,7 +1,7 @@
-#ifndef _PWC_DRM_H
-#define _PWC_DRM_H
+#ifndef _PWC_RENDER_DRM_H
+#define _PWC_RENDER_DRM_H
 
-#include <pwc/vulkan.h>
+#include <pwc/render/vulkan.h>
 #include <xf86drmMode.h>
 #include <gbm.h>
 

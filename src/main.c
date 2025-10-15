@@ -1,3 +1,4 @@
+#include <drm_mode.h>
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -7,6 +8,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <vulkan/vulkan_core.h>
 #include <wayland-version.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
@@ -15,8 +17,20 @@
 #include <xf86drmMode.h>
 #include <gbm.h>
 
-#include <pwc/vulkan.h>
-#include <pwc/drm.h>
+#include <pwc/render/vulkan.h>
+#include <pwc/render/drm.h>
+#include <sys/poll.h>
+#include <linux/dma-buf.h>
+
+#include <fcntl.h>
+#include <linux/kd.h>
+#include <linux/major.h>
+#include <linux/vt.h>
+#include <signal.h>
+#include <sys/ioctl.h>
+#include <sys/stat.h>
+#include <termios.h>
+#include <errno.h>
 
 int framebuffer_draw_screen(struct pwc_drm *drm) {
     // FrameBuffer
@@ -67,6 +81,72 @@ int framebuffer_draw_screen(struct pwc_drm *drm) {
     return EXIT_SUCCESS;
 }
 
+static int vulkandrm_draw_screen(struct pwc_drm *drm, struct pwc_vulkan *vulkan) {
+    int fd; // FD для DMA-BUF
+    VkImage vulkan_image;
+
+    if (create_vulkan_image_and_export_fd(vulkan, &fd, &vulkan_image)) {
+        fprintf(stderr, "Failed to create and export Vulkan image\n");
+        return EXIT_FAILURE;
+    }
+
+    // Добавьте рендеринг
+    if (render_red_screen_to_image(vulkan, vulkan_image) != VK_SUCCESS) {
+        fprintf(stderr, "Failed to render red screen to image\n");
+        close(fd);  // Очистите FD
+        return EXIT_FAILURE;
+    }
+
+    struct gbm_device *gbm = gbm_create_device(drm->fd);
+    if (!gbm) {
+        fprintf(stderr, "Failed to create GBM device\n");
+        close(fd);
+        return EXIT_FAILURE;
+    }
+
+    // Import FD to GBM buffer
+    struct gbm_import_fd_data import_data = {
+        .fd = fd,
+        .width = vulkan->width,
+        .height = vulkan->height,
+        .format = GBM_FORMAT_ARGB8888,
+    };
+
+    struct gbm_bo *bo = gbm_bo_import(gbm, GBM_BO_IMPORT_FD, &import_data, 0);
+    if (!bo) {
+        fprintf(stderr, "Failed to create gbm buffer from FD\n");
+        gbm_device_destroy(gbm);
+        close(fd);
+        return EXIT_FAILURE;
+    }
+
+    uint32_t handle = gbm_bo_get_handle(bo).u32;
+    // uint32_t stride = gbm_bo_get_stride(bo);
+    uint32_t pitches, offsets, fb_id;
+
+    if (drmModeAddFB2(drm->fd, drm->preferred_mode->hdisplay, drm->preferred_mode->vdisplay,
+        GBM_FORMAT_ARGB8888, &handle, &pitches, &offsets, &fb_id, 0) != 0)
+    {
+        fprintf(stderr, "Failedd to add fb2 to drm device");
+        gbm_bo_destroy(bo);
+        gbm_device_destroy(gbm);
+        close(fd);
+        return EXIT_FAILURE;
+    }
+
+    drmModeSetCrtc(drm->fd, drm->crtc->crtc_id, fb_id, 0, 0, &drm->connector->connector_id, 1, drm->preferred_mode);
+
+    sleep(5);
+
+    // Очистка
+    drmModeRmFB(drm->fd, fb_id);
+    gbm_bo_destroy(bo);
+    gbm_device_destroy(gbm);
+    close(fd);  // Закрываем FD
+
+    return EXIT_SUCCESS;
+};
+
 int main(int argc, char **argv) {
     printf("PURE WAYLAND COMPOSITOR\n");
     printf("WAYLAND version: %s\n", WAYLAND_VERSION);  // Use _S for string (if defined; fallback to manual)
@@ -84,11 +164,11 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
-    // Draw screen
-    // if (framebuffer_draw_screen(drm)) {
-    //     fprintf(stderr, "Failed to draw screen with framebuffer\n");
-    //     return EXIT_FAILURE;
-    // }
+    vulkandrm_draw_screen(drm, vulkan);
+    printf("Succesfully drawed a vulkan image on screen.\n");
+
+    framebuffer_draw_screen(drm);
+    printf("Succesfully drawed via framebuffer.");
 
     return EXIT_SUCCESS;
 }
