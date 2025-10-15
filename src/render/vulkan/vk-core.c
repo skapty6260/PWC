@@ -1,10 +1,39 @@
 #include <pwc/render/vulkan/vk-core.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <vulkan/vulkan_core.h>
 
 // Все функции связанные с ядром вулкана структуры вулкана, его инициализацией, не переиспользуемыми функциями
+
+const char *device_extensions[3] = {
+    "VK_KHR_external_memory",      // Base for external memory (core in 1.1, but enable)
+    "VK_KHR_external_memory_fd",   // Import/export via POSIX FD (DMA-BUF)
+    "VK_KHR_swapchain"
+};
+
+static bool check_device_extensions_support(VkPhysicalDevice device) {
+    uint32_t extension_count;
+    vkEnumerateDeviceExtensionProperties(device, NULL, &extension_count, NULL);
+    VkExtensionProperties available_extensions[extension_count];
+    vkEnumerateDeviceExtensionProperties(device, NULL, &extension_count, available_extensions);
+
+    for (uint32_t i = 0; i < sizeof(device_extensions) / sizeof(char*); i++) {
+        bool ext_found = false;
+        for (uint32_t j = 0; j < extension_count; j++) {
+            if (strcmp(device_extensions[i], available_extensions[i].extensionName)) {
+                ext_found = true;   
+                break;
+            }
+        }
+        if (!ext_found) {
+            return false;
+        }
+    }
+
+    return true;
+}
 
 static uint32_t rate_device_suitability(VkPhysicalDevice physical_device) {
     VkPhysicalDeviceProperties properties;
@@ -33,21 +62,10 @@ static uint32_t rate_device_suitability(VkPhysicalDevice physical_device) {
     }
 
     // Check extensions support
-    uint32_t count;
-    bool dmaBuf_supported = false;
-    vkEnumerateDeviceExtensionProperties(physical_device, NULL, &count, NULL);
-    VkExtensionProperties *exts = malloc(count * sizeof(VkExtensionProperties));
-    vkEnumerateDeviceExtensionProperties(physical_device, NULL, &count, exts);
-    for (uint32_t i = 0; i < count; i++) {
-        if (strcmp(exts[i].extensionName, "VK_KHR_external_memory_fd") == 0) {
-            dmaBuf_supported = true;
-        }
-    }
-    if (!dmaBuf_supported) {
-        fprintf(stderr, "GPU doesn't support dma_buffers fd\n");
+    if (!check_device_extensions_support(physical_device)) {
+        fprintf(stderr, "GPU doesn't support extensions");
         score = 0;
     }
-    free(exts);
 
     return score;
 }
@@ -109,13 +127,6 @@ void create_logical_device(struct pwc_vulkan *vulkan) {
     float queuePriority = 1.0f;
     queueCreateInfo.pQueuePriorities = &queuePriority;
 
-    const char *device_extensions[] = {
-        "VK_KHR_external_memory",      // Base for external memory (core in 1.1, but enable)
-        "VK_KHR_external_memory_fd",   // Import/export via POSIX FD (DMA-BUF)
-        // Optional but recommended for explicit DMA-BUF:
-        "VK_EXT_external_memory_dma_buf",  // Handles DMA-BUF modifiers/formats (Mesa/NVIDIA support)
-        // If sync needed (e.g., between queues): "VK_KHR_external_semaphore_fd"
-    };
 
     VkDeviceCreateInfo createInfo = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
@@ -153,6 +164,17 @@ void create_vulkan_instance(struct pwc_vulkan *vulkan) {
     if (vkCreateInstance(&createInfo, NULL, &vulkan->instance) != VK_SUCCESS) {
         fprintf(stderr, "Failed to create vulkan instance\n");
         exit(EXIT_FAILURE);
+    }
+
+    uint32_t extension_count = 0;
+    vkEnumerateInstanceExtensionProperties(NULL, &extension_count, NULL);
+
+    VkExtensionProperties *extensions = (VkExtensionProperties*)malloc(sizeof(VkExtensionProperties) * extension_count);
+    vkEnumerateInstanceExtensionProperties(NULL, &extension_count, extensions);
+
+    printf("\nDEBUGGING: Extensions\n");
+    for (int i = 0; i < extension_count; i++) {
+        printf("Extension %s\n", extensions[i].extensionName);
     }
 }
 
@@ -224,4 +246,3 @@ void create_semaphore(struct pwc_vulkan *vulkan) {
         exit(EXIT_FAILURE);
     }
 }
-
