@@ -19,6 +19,6 @@ struct pwc_drm {
 drmModeConnectorPtr getFirstConnectedConnector(drmModeResPtr mode_resources, int fd);
 drmModeModeInfoPtr getPreferredMode(drmModeConnectorPtr connector, int fd);
 
-int init_drm(struct pwc_drm *drm, char path[32], struct pwc_vulkan *vulkan);
+int init_drm(struct pwc_drm *drm, char path[32]);
 
 #endif

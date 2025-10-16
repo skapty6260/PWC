@@ -6,3 +6,4 @@ build_*
 subprojects/*
 !subprojects/packagefiles
 !subprojects/*wrap
+src/cube.c

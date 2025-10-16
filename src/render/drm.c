@@ -5,7 +5,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <vulkan/vulkan_core.h>
 #include <xf86drm.h>
 
 drmModeConnectorPtr getFirstConnectedConnector(drmModeResPtr mode_resources, int fd) {
@@ -55,7 +54,7 @@ void cleanup_drm(struct pwc_drm *drm) {
     free(drm);
 }
 
-int init_drm(struct pwc_drm *drm, char path[32], struct pwc_vulkan *vulkan) {
+int init_drm(struct pwc_drm *drm, char path[32]) {
     drm->fd = open(path, O_RDWR);
     if (drm->fd < 0) {
         fprintf(stderr, "Failed to open %s (try sudo or check device)\n", path);
@@ -111,14 +110,6 @@ int init_drm(struct pwc_drm *drm, char path[32], struct pwc_vulkan *vulkan) {
     drm->crtc = drmModeGetCrtc(drm->fd, drm->encoder->crtc_id);
     if (drm->crtc == NULL) {
         fprintf(stderr, "Failed to get drm crtc\n");
-        return EXIT_FAILURE;
-    }
-
-    vulkan->image_format = VK_FORMAT_R8G8B8A8_SRGB;
-    vulkan->width = drm->preferred_mode->hdisplay;
-    vulkan->height = drm->preferred_mode->vdisplay;
-    if (init_vulkan(vulkan, drm->fd)) {
-        fprintf(stderr, "Failed to init vulkan");
         return EXIT_FAILURE;
     }
 

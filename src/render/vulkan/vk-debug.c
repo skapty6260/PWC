@@ -1,11 +1,11 @@
 #include <pwc/render/vulkan/vk-debug.h>
+#include <vulkan/vulkan.h>
 
 #include <stdio.h>
 #include <string.h>
-#include <vulkan/vulkan_core.h>
 
 const char* validation_layers = {
-    "VK_LAYER_MESA_device_select",
+    "VK_LAYER_KHRONOS_validation",
 };
 const uint32_t validation_layer_count = 1;
 
