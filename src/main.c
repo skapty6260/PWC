@@ -80,15 +80,10 @@ int main(int argc, char **argv) {
     char path[32];
     snprintf(path, sizeof(path), "/dev/dri/%s", card);
 
-    // drm
-    struct pwc_drm *drm = calloc(1, sizeof(struct pwc_drm));
-    init_drm(drm, path);
-
     struct pwc_vulkan *vulkan = calloc(1, sizeof(struct pwc_vulkan));
-    vulkan->validate = false;
+    vulkan->validate = true;
     init_vulkan(vulkan);
 
-    free(drm);
     free(vulkan);
 
     return EXIT_SUCCESS;

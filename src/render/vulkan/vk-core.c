@@ -18,10 +18,11 @@
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
 
-const char *device_extensions[1] = {
-    VK_KHR_SWAPCHAIN_EXTENSION_NAME
+const char *device_extensions[2] = {
+    VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+    VK_KHR_INCREMENTAL_PRESENT_EXTENSION_NAME
 };
-const uint32_t device_extensions_count = 1;
+const uint32_t device_extensions_count = 2;
 
 static bool check_device_extensions_support(VkPhysicalDevice device) {
     uint32_t extension_count;
@@ -33,7 +34,6 @@ static bool check_device_extensions_support(VkPhysicalDevice device) {
         bool ext_found = false;
         for (uint32_t j = 0; j < extension_count; j++) {
             if (!strcmp(device_extensions[i], available_extensions[j].extensionName)) {
-                printf("Device Extension active %s\n", available_extensions[j].extensionName);
                 ext_found = true;   
                 break;
             }
@@ -93,21 +93,22 @@ void create_display_surface(struct pwc_vulkan *vulkan) {
     // Get first display
     display_count = 1;
     err = vkGetPhysicalDeviceDisplayPropertiesKHR(vulkan->physicalDevice, &display_count, &display_props);
-    assert(!err);
+    assert(!err || (err == VK_INCOMPLETE));
 
     display = display_props.display;
 
-    // INSIDE BUSY GPU ERRORS HERE
     // Get the first mode of the display
-    if (vkGetDisplayModePropertiesKHR(vulkan->physicalDevice, display, &mode_count, NULL) != VK_SUCCESS && mode_count == 0) {
-        fprintf(stderr, "Cannot find any mode for the display\n");
-        exit(EXIT_FAILURE);
+    err = vkGetDisplayModePropertiesKHR(vulkan->physicalDevice, display, &mode_count, NULL);
+    assert(!err);
+        
+    if (mode_count == 0) {
+    	fprintf(stderr, "Cannot find any mode for the display\n");
+	    exit(EXIT_FAILURE);
     }
 
-    // TTY ERRORS HERE
     mode_count = 1;
     err = vkGetDisplayModePropertiesKHR(vulkan->physicalDevice, display, &mode_count, &mode_props);
-    assert(!err);
+    assert(!err || (err == VK_INCOMPLETE));
 
     // Get the list of planes
     if (vkGetPhysicalDeviceDisplayPlanePropertiesKHR(vulkan->physicalDevice, &plane_count, NULL) != VK_SUCCESS && plane_count == 0) {
@@ -239,8 +240,8 @@ void pick_physical_device(struct pwc_vulkan *vulkan) {
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(device, &properties);
     printf(
-        "Selected device %s:\nDevice Id: %u\nDevice Type: %u\nVendor Id: %u\nDriver Version: %u\n",
-        properties.deviceName, properties.deviceID, properties.deviceType, properties.vendorID, properties.driverVersion
+        "\nSelected device %s\n\n",
+        properties.deviceName
     );
 }
 
