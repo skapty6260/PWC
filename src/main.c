@@ -1,36 +1,15 @@
-#include <drm_mode.h>
-#include <assert.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <string.h>
-#include <sys/types.h>
 #include <unistd.h>
-#include <fcntl.h>
 #include <vulkan/vulkan_core.h>
 #include <wayland-version.h>
-#include <sys/ioctl.h>
 #include <sys/mman.h>
-
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 #include <gbm.h>
-
 #include <pwc/render/vulkan.h>
 #include <pwc/render/drm.h>
-#include <sys/poll.h>
-#include <linux/dma-buf.h>
-
-#include <fcntl.h>
-#include <linux/kd.h>
-#include <linux/major.h>
-#include <linux/vt.h>
-#include <signal.h>
-#include <sys/ioctl.h>
-#include <sys/stat.h>
-#include <termios.h>
-#include <errno.h>
 
 int framebuffer_draw_screen(struct pwc_drm *drm) {
     // FrameBuffer

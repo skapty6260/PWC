@@ -1,11 +1,11 @@
 #include <pwc/render/vulkan/vk-core.h>
+#include <pwc/render/vulkan/vk-debug.h>
+
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <vulkan/vulkan_core.h>
-
-// Все функции связанные с ядром вулкана структуры вулкана, его инициализацией, не переиспользуемыми функциями
 
 const char *device_extensions[3] = {
     "VK_KHR_external_memory",      // Base for external memory (core in 1.1, but enable)
@@ -19,10 +19,11 @@ static bool check_device_extensions_support(VkPhysicalDevice device) {
     VkExtensionProperties available_extensions[extension_count];
     vkEnumerateDeviceExtensionProperties(device, NULL, &extension_count, available_extensions);
 
-    for (uint32_t i = 0; i < sizeof(device_extensions) / sizeof(char*); i++) {
+    for (uint32_t i = 0; i < 3; i++) {
         bool ext_found = false;
         for (uint32_t j = 0; j < extension_count; j++) {
-            if (strcmp(device_extensions[i], available_extensions[i].extensionName)) {
+            if (strcmp(device_extensions[i], available_extensions[j].extensionName) == 0) {
+                printf("Extension %s\n", available_extensions[j].extensionName);
                 ext_found = true;   
                 break;
             }
@@ -146,6 +147,11 @@ void create_logical_device(struct pwc_vulkan *vulkan) {
 }
 
 void create_vulkan_instance(struct pwc_vulkan *vulkan) {
+    if (enable_validation_layers && !check_layer_validation_support()) {
+        fprintf(stderr, "Validation Layers requested, but not available\n");
+        exit(EXIT_FAILURE);
+    }
+
     VkApplicationInfo appInfo = {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pApplicationName = APP_NAME,
@@ -161,20 +167,16 @@ void create_vulkan_instance(struct pwc_vulkan *vulkan) {
         .pApplicationInfo = &appInfo,
     };
 
+    if (enable_validation_layers == true) {
+        createInfo.enabledLayerCount = validation_layer_count;
+        createInfo.ppEnabledLayerNames = &validation_layers;
+    } else {
+        createInfo.enabledLayerCount = 0;
+    }
+
     if (vkCreateInstance(&createInfo, NULL, &vulkan->instance) != VK_SUCCESS) {
         fprintf(stderr, "Failed to create vulkan instance\n");
         exit(EXIT_FAILURE);
-    }
-
-    uint32_t extension_count = 0;
-    vkEnumerateInstanceExtensionProperties(NULL, &extension_count, NULL);
-
-    VkExtensionProperties *extensions = (VkExtensionProperties*)malloc(sizeof(VkExtensionProperties) * extension_count);
-    vkEnumerateInstanceExtensionProperties(NULL, &extension_count, extensions);
-
-    printf("\nDEBUGGING: Extensions\n");
-    for (int i = 0; i < extension_count; i++) {
-        printf("Extension %s\n", extensions[i].extensionName);
     }
 }
 
