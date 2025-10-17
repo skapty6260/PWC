@@ -3,20 +3,13 @@
 #include <pwc/render/vulkan.h>
 #include <pwc/render/vulkan/vk-core.h>
 #include <pwc/render/vulkan/vk-debug.h>
+#include <pwc/render/utils/macro.h>
 
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <vulkan/vulkan_core.h>
-
-#if defined(NDEBUG) && defined(__GNUC__)
-#define U_ASSERT_ONLY __attribute__((unused))
-#else
-#define U_ASSERT_ONLY
-#endif
-
-#define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
 
 const char *device_extensions[2] = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
@@ -59,13 +52,6 @@ static uint32_t rate_device_suitability(VkPhysicalDevice physical_device) {
     }
 
     score += properties.limits.maxImageDimension2D;
-
-    // Check device support required queue families
-    QueueFamilyIndices indices = find_queue_families(physical_device);
-    if (!indices.is_set) {
-        fprintf(stderr, "GPU does not support required queue families\n");
-        score = 0;
-    }
 
     // Check extensions support
     if (!check_device_extensions_support(physical_device)) {
@@ -261,35 +247,42 @@ void pick_physical_device(struct pwc_vulkan *vulkan) {
 }
 
 void create_logical_device(struct pwc_vulkan *vulkan) {
-    QueueFamilyIndices indices = find_queue_families(vulkan->physicalDevice);
+    VkResult U_ASSERT_ONLY err;
+    float queue_priorities[1] = {0.0};
+    VkDeviceQueueCreateInfo queues[2];
+    queues[0].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+    queues[0].pNext = NULL;
+    queues[0].queueFamilyIndex = vulkan->graphics_queue_family_index;
+    queues[0].queueCount = 1;
+    queues[0].pQueuePriorities = queue_priorities;
+    queues[0].flags = 0;
+
     VkPhysicalDeviceFeatures features;
     vkGetPhysicalDeviceFeatures(vulkan->physicalDevice, &features);
 
-    VkDeviceQueueCreateInfo queueCreateInfo = {
-        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-        .queueFamilyIndex = indices.graphics_family,
-        .queueCount = 1
-    };
-
-    float queuePriority = 1.0f;
-    queueCreateInfo.pQueuePriorities = &queuePriority;
-
-
-    VkDeviceCreateInfo createInfo = {
+    VkDeviceCreateInfo device = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .pQueueCreateInfos = &queueCreateInfo,
+        .pNext = NULL,
         .queueCreateInfoCount = 1,
+        .pQueueCreateInfos = queues,
+        .enabledExtensionCount = 0, // vulkan->enabled_extension_count
+        .ppEnabledExtensionNames = NULL, // (const char *const *)vulkan->extension_names,
         .pEnabledFeatures = &features,
-        .enabledExtensionCount = device_extensions_count,
-        .ppEnabledExtensionNames = device_extensions,
     };
 
-    if (vkCreateDevice(vulkan->physicalDevice, &createInfo, NULL, &vulkan->device) != VK_SUCCESS) {
-        fprintf(stderr, "Failed to create logical device\n");
-        exit(EXIT_FAILURE);
+    // Present queue
+    if (vulkan->separate_present_queue) {
+        queues[1].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        queues[1].pNext = NULL;
+        queues[1].queueFamilyIndex = vulkan->present_queue_family_index;
+        queues[1].queueCount = 1;
+        queues[1].pQueuePriorities = queue_priorities;
+        queues[1].flags = 0;
+        device.queueCreateInfoCount = 2;
     }
 
-    vkGetDeviceQueue(vulkan->device, indices.graphics_family, 0, &vulkan->graphics_queue);
+    err = vkCreateDevice(vulkan->physicalDevice, &device, NULL, &vulkan->device);
+    assert(!err);
 }
 
 static VkSurfaceFormatKHR pick_surface_format(const VkSurfaceFormatKHR *surface_formats, uint32_t count) {
@@ -311,7 +304,6 @@ static VkSurfaceFormatKHR pick_surface_format(const VkSurfaceFormatKHR *surface_
     return surface_formats[0];
 }
 
-// TODO: Make queues in physical and logical devices
 void init_swapchain(struct pwc_vulkan *vulkan) {
     VkResult U_ASSERT_ONLY err;
 
@@ -359,8 +351,8 @@ void init_swapchain(struct pwc_vulkan *vulkan) {
     vulkan->separate_present_queue = (vulkan->graphics_queue_family_index != vulkan->present_queue_family_index);
     free(supports_present);
 
-    // Create logical device (Maybe)
-    // create_logical_device()
+    printf("Creating logical device\n");
+    create_logical_device(vulkan);
 
     vkGetDeviceQueue(vulkan->device, vulkan->graphics_queue_family_index, 0, &vulkan->graphics_queue);
 

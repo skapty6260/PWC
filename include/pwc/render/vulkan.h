@@ -35,6 +35,7 @@ struct pwc_vulkan {
     VkSwapchainKHR swapchain;
     
     VkCommandPool cmd_pool;
+    VkCommandBuffer cmd;
     VkCommandPool present_cmd_pool;
 
     uint32_t enabled_extension_count;
@@ -45,15 +46,22 @@ struct pwc_vulkan {
     VkFormat format;
     VkColorSpaceKHR color_space;
 
+    // DEMO
+    struct {
+        VkFormat format;
+
+        VkImage image;
+        VkMemoryAllocateInfo mem_alloc;
+        VkDeviceMemory mem;
+        VkImageView view;
+    } demo_depth;
+    bool demo_quit;
+    int32_t demo_current_frame;
+    int32_t demo_frame_count;
+
+
     bool validate;
 };
-
-typedef struct QueueFamilyIndices {
-    uint32_t graphics_family;
-    bool is_set;
-} QueueFamilyIndices;
-
-QueueFamilyIndices find_queue_families(VkPhysicalDevice device);
 
 int init_vulkan(struct pwc_vulkan *vulkan);
 
