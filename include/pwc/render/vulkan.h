@@ -11,29 +11,39 @@
 #define APP_NAME "pwc vulkan wayland compositor"
 
 struct pwc_vulkan {
+    VkSurfaceKHR surface;
+
     VkInstance instance;
     VkDevice device;
     VkDisplayKHR display;
-    VkQueue graphics_queue;
-    VkRenderPass render_pass;
-    VkCommandPool cmd_pool;
-    VkSemaphore semaphore;
     VkPipelineLayout pipeline_layout;
     VkPipeline pipeline;
     VkBuffer buffer;
     VkDeviceMemory mem;
     VkDescriptorSet descriptor_set;
-    VkSwapchainKHR swapchain;
 
-    VkSurfaceKHR surface;
-    
-    // GPU
     VkPhysicalDevice physicalDevice;
+    VkQueue graphics_queue;
+    VkQueue present_queue;
+    uint32_t graphics_queue_family_index;
+    uint32_t present_queue_family_index;
+    uint32_t queue_family_count;
+    VkPhysicalDeviceProperties gpu_props;
+    VkQueueFamilyProperties *queue_props;
+    bool separate_present_queue;
+
+    VkSwapchainKHR swapchain;
+    
+    VkCommandPool cmd_pool;
+    VkCommandPool present_cmd_pool;
 
     uint32_t enabled_extension_count;
     uint32_t enabled_layer_count;
     char *extension_names[64];
     char *enabled_layers[64];
+
+    VkFormat format;
+    VkColorSpaceKHR color_space;
 
     bool validate;
 };

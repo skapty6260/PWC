@@ -99,7 +99,7 @@ void create_display_surface(struct pwc_vulkan *vulkan) {
 
     // Get the first mode of the display
     err = vkGetDisplayModePropertiesKHR(vulkan->physicalDevice, display, &mode_count, NULL);
-    assert(!err);
+    assert(!err); // If this error asserts, you probaly not in TTY and your gpu device is busy now
         
     if (mode_count == 0) {
     	fprintf(stderr, "Cannot find any mode for the display\n");
@@ -236,6 +236,21 @@ void pick_physical_device(struct pwc_vulkan *vulkan) {
 
     vulkan->physicalDevice = device;
 
+    // Get properties and queueFamilies
+    vkGetPhysicalDeviceProperties(vulkan->physicalDevice, &vulkan->gpu_props);
+    
+    vkGetPhysicalDeviceQueueFamilyProperties(vulkan->physicalDevice, &vulkan->queue_family_count, NULL);
+    assert(vulkan->queue_family_count >= 1);
+
+    vulkan->queue_props = (VkQueueFamilyProperties *)malloc(vulkan->queue_family_count * sizeof(VkQueueFamilyProperties));
+    vkGetPhysicalDeviceQueueFamilyProperties(vulkan->physicalDevice, &vulkan->queue_family_count, vulkan->queue_props);
+
+    // Query fine-grained feature for this device.
+    //  if app has specific feature requirements it should check supported
+    //  features based on this query
+    VkPhysicalDeviceFeatures physical_device_features;
+    vkGetPhysicalDeviceFeatures(vulkan->physicalDevice, &physical_device_features);
+
     // Log info
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(device, &properties);
@@ -275,6 +290,105 @@ void create_logical_device(struct pwc_vulkan *vulkan) {
     }
 
     vkGetDeviceQueue(vulkan->device, indices.graphics_family, 0, &vulkan->graphics_queue);
+}
+
+static VkSurfaceFormatKHR pick_surface_format(const VkSurfaceFormatKHR *surface_formats, uint32_t count) {
+    // Prefer non-SRGB formats
+    for (uint32_t i = 0; i < count; i++) {
+        const VkFormat format = surface_formats[i].format;
+
+         if (format == VK_FORMAT_R8G8B8A8_UNORM || format == VK_FORMAT_B8G8R8A8_UNORM ||
+            format == VK_FORMAT_A2B10G10R10_UNORM_PACK32 || format == VK_FORMAT_A2R10G10B10_UNORM_PACK32 ||
+            format == VK_FORMAT_A1R5G5B5_UNORM_PACK16 || format == VK_FORMAT_R5G6B5_UNORM_PACK16 ||
+            format == VK_FORMAT_R16G16B16A16_SFLOAT) {
+            return surface_formats[i];
+        }
+    }
+
+    printf("Can't find our preferred formats... Falling back to first exposed format. Rendering may be incorrect.\n");
+
+    assert(count >= 1);
+    return surface_formats[0];
+}
+
+// TODO: Make queues in physical and logical devices
+void init_swapchain(struct pwc_vulkan *vulkan) {
+    VkResult U_ASSERT_ONLY err;
+
+    // Iterate over each queue to learn whether it supports presenting
+    VkBool32 *supports_present = (VkBool32 *)malloc(vulkan->queue_family_count * sizeof(VkBool32));
+    for (uint32_t i = 0; i < vulkan->queue_family_count; i++) {
+        vkGetPhysicalDeviceSurfaceSupportKHR(vulkan->physicalDevice, i, vulkan->surface, &supports_present[i]);
+    }
+
+    // Seearch for a graphics and a present queue in the array of queue
+    // families, try to find one that supports both
+    uint32_t graphics_queue_family_index = UINT32_MAX;
+    uint32_t present_queue_family_index = UINT32_MAX;
+    for (uint32_t i = 0; i < vulkan->queue_family_count; i++) {
+        if ((vulkan->queue_props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0) {
+            if (graphics_queue_family_index == UINT32_MAX) {
+                graphics_queue_family_index = i;
+            }
+
+            if (supports_present[i] == VK_TRUE) {
+                graphics_queue_family_index = i;
+                present_queue_family_index = i;
+                break;
+            }
+        }
+    }
+
+    if (present_queue_family_index == UINT32_MAX) {
+        // If didn't find a queue that supports both graphics and present, then
+        // find a separate present queue.
+        for (uint32_t i = 0; i < vulkan->queue_family_count; ++i) {
+            present_queue_family_index = i;
+            break;
+        }
+    }
+
+    // Generate error if couldn't find both graphics and present queue
+    if (graphics_queue_family_index == UINT32_MAX || present_queue_family_index == UINT32_MAX) {
+        fprintf(stderr, "[Swapchain initialization failure]\nCouldn't find both graphics and present queues\n");
+        exit(EXIT_FAILURE);
+    }
+
+    vulkan->graphics_queue_family_index = graphics_queue_family_index;
+    vulkan->present_queue_family_index = present_queue_family_index;
+    vulkan->separate_present_queue = (vulkan->graphics_queue_family_index != vulkan->present_queue_family_index);
+    free(supports_present);
+
+    // Create logical device (Maybe)
+    // create_logical_device()
+
+    vkGetDeviceQueue(vulkan->device, vulkan->graphics_queue_family_index, 0, &vulkan->graphics_queue);
+
+    if (!vulkan->separate_present_queue) {
+        vulkan->present_queue = vulkan->graphics_queue;
+    } else {
+        vkGetDeviceQueue(vulkan->device, vulkan->present_queue_family_index, 0, &vulkan->present_queue);
+    }
+
+    // Get the list of VkFormat's that are supported
+    uint32_t format_count;
+    err = vkGetPhysicalDeviceSurfaceFormatsKHR(vulkan->physicalDevice, vulkan->surface, &format_count, NULL);
+    assert(!err);
+    VkSurfaceFormatKHR *surface_formats = (VkSurfaceFormatKHR *)malloc(format_count * sizeof(VkSurfaceFormatKHR));
+    err = vkGetPhysicalDeviceSurfaceFormatsKHR(vulkan->physicalDevice, vulkan->surface, &format_count, surface_formats);
+    assert(!err);
+    VkSurfaceFormatKHR surface_format = pick_surface_format(surface_formats, format_count);
+    vulkan->format = surface_format.format;
+    vulkan->color_space = surface_format.colorSpace;
+    free(surface_formats);
+
+    //  demo->quit = false;
+    // demo->curFrame = 0;
+
+    // demo->first_swapchain_frame = true;
+
+    // // Get Memory information and properties
+    // vkGetPhysicalDeviceMemoryProperties(demo->gpu, &demo->memory_properties);
 }
 
 static VkBool32 check_validation_layers(uint32_t check_count, char **check_names, uint32_t layer_count, VkLayerProperties *layers) {

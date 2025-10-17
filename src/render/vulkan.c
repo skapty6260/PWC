@@ -42,7 +42,7 @@ int init_vulkan(struct pwc_vulkan *vulkan) {
     create_logical_device(vulkan);
     printf("Created vulkan success");
     create_display_surface(vulkan);
-    // init_vk_swapchain
+    init_swapchain(vulkan);
     // demo_prepare
     // demo_run_display
 
