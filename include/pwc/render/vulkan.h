@@ -1,6 +1,7 @@
 #ifndef _PWC_RENDER_VULKAN_H
 #define _PWC_RENDER_VULKAN_H
 
+#include <pwc/render/demo.h>
 #include <vulkan/vulkan.h>
 #include <bits/types/struct_timeval.h>
 #include <gbm.h>
@@ -10,8 +11,11 @@
 
 #define APP_NAME "pwc vulkan wayland compositor"
 
+struct pwc_demo;
+
 struct pwc_vulkan {
     VkSurfaceKHR surface;
+    struct pwc_demo *demo;
 
     VkInstance instance;
     VkDevice device;
@@ -36,6 +40,7 @@ struct pwc_vulkan {
     
     VkCommandPool cmd_pool;
     VkCommandBuffer cmd;
+
     VkCommandPool present_cmd_pool;
 
     uint32_t enabled_extension_count;
@@ -45,20 +50,6 @@ struct pwc_vulkan {
 
     VkFormat format;
     VkColorSpaceKHR color_space;
-
-    // DEMO
-    struct {
-        VkFormat format;
-
-        VkImage image;
-        VkMemoryAllocateInfo mem_alloc;
-        VkDeviceMemory mem;
-        VkImageView view;
-    } demo_depth;
-    bool demo_quit;
-    int32_t demo_current_frame;
-    int32_t demo_frame_count;
-
 
     bool validate;
 };

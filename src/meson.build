@@ -4,7 +4,8 @@ sources = files(
     'render/drm.c',
     'render/esTransform.c',
     'render/vulkan/vk-core.c',
-    'render/vulkan/vk-debug.c'
+    'render/vulkan/vk-debug.c',
+    'render/demo.c',
 )
 
 wayland_server = dependency('wayland-server', version: '>=1.21.0')

@@ -11,35 +11,37 @@
 #include <string.h>
 #include <vulkan/vulkan_core.h>
 
-const char *device_extensions[2] = {
-    VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-    VK_KHR_INCREMENTAL_PRESENT_EXTENSION_NAME
-};
-const uint32_t device_extensions_count = 2;
+static bool check_device_extensions_support(struct pwc_vulkan *vulkan, VkPhysicalDevice physical_device) {
+    VkResult U_ASSERT_ONLY err;
 
-static bool check_device_extensions_support(VkPhysicalDevice device) {
-    uint32_t extension_count;
-    vkEnumerateDeviceExtensionProperties(device, NULL, &extension_count, NULL);
-    VkExtensionProperties available_extensions[extension_count];
-    vkEnumerateDeviceExtensionProperties(device, NULL, &extension_count, available_extensions);
+    uint32_t device_extensions_count = 0;
+    VkBool32 swapchainExtFound = 0;
+    vulkan->enabled_extension_count = 0;
+    memset(vulkan->extension_names, 0, sizeof(vulkan->extension_names));
+    
+    err = vkEnumerateDeviceExtensionProperties(physical_device, NULL, &device_extensions_count, NULL);
+    assert(!err);
 
-    for (uint32_t i = 0; i < ARRAY_SIZE(device_extensions); i++) {
-        bool ext_found = false;
-        for (uint32_t j = 0; j < extension_count; j++) {
-            if (!strcmp(device_extensions[i], available_extensions[j].extensionName)) {
-                ext_found = true;   
-                break;
-            }
+    if (device_extensions_count > 0) {
+        VkExtensionProperties *device_extensions = malloc(sizeof(VkExtensionProperties) * device_extensions_count);
+        err = vkEnumerateDeviceExtensionProperties(physical_device, NULL, &device_extensions_count, device_extensions);
+        assert(!err);
+
+        for (uint32_t i = 0; i < device_extensions_count; i++) {
+            if (!strcmp(VK_KHR_SWAPCHAIN_EXTENSION_NAME, device_extensions[i].extensionName)) {
+                swapchainExtFound = 1;
+                vulkan->extension_names[vulkan->enabled_extension_count++] = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
+            };
         }
-        if (!ext_found) {
-            return false;
-        }
+
+        assert(vulkan->enabled_extension_count < 64);
+        free(device_extensions);
     }
 
-    return true;
+    return swapchainExtFound;
 }
 
-static uint32_t rate_device_suitability(VkPhysicalDevice physical_device) {
+static uint32_t rate_device_suitability(VkPhysicalDevice physical_device, struct pwc_vulkan *vulkan) {
     VkPhysicalDeviceProperties properties;
     VkPhysicalDeviceFeatures features;
     vkGetPhysicalDeviceProperties(physical_device, &properties);
@@ -54,7 +56,7 @@ static uint32_t rate_device_suitability(VkPhysicalDevice physical_device) {
     score += properties.limits.maxImageDimension2D;
 
     // Check extensions support
-    if (!check_device_extensions_support(physical_device)) {
+    if (!check_device_extensions_support(vulkan, physical_device)) {
         fprintf(stderr, "GPU doesn't support required extensions\n");
         score = 0;
     }
@@ -208,7 +210,7 @@ void pick_physical_device(struct pwc_vulkan *vulkan) {
     VkPhysicalDevice device;
     uint32_t device_score;
     for (int i = 0; i < deviceCount; i++) {
-        uint32_t score = rate_device_suitability(devices[i]);
+        uint32_t score = rate_device_suitability(devices[i], vulkan);
         if (score > device_score) {
             device_score = score;
             device = devices[i];
@@ -265,8 +267,8 @@ void create_logical_device(struct pwc_vulkan *vulkan) {
         .pNext = NULL,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = queues,
-        .enabledExtensionCount = 0, // vulkan->enabled_extension_count
-        .ppEnabledExtensionNames = NULL, // (const char *const *)vulkan->extension_names,
+        .enabledExtensionCount = vulkan->enabled_extension_count, 
+        .ppEnabledExtensionNames = (const char *const *)vulkan->extension_names, // (const char *const *)vulkan->extension_names,
         .pEnabledFeatures = &features,
     };
 
@@ -374,13 +376,13 @@ void init_swapchain(struct pwc_vulkan *vulkan) {
     vulkan->color_space = surface_format.colorSpace;
     free(surface_formats);
 
-    //  demo->quit = false;
-    // demo->curFrame = 0;
+    vulkan->demo->quit = false;
+    vulkan->demo->demo_current_frame = 0;
 
-    // demo->first_swapchain_frame = true;
+    vulkan->demo->first_swapchain_frame = true;
 
-    // // Get Memory information and properties
-    // vkGetPhysicalDeviceMemoryProperties(demo->gpu, &demo->memory_properties);
+    // Get Memory information and properties
+    vkGetPhysicalDeviceMemoryProperties(vulkan->physicalDevice, &vulkan->demo->memory_properties);
 }
 
 static VkBool32 check_validation_layers(uint32_t check_count, char **check_names, uint32_t layer_count, VkLayerProperties *layers) {
