@@ -12,6 +12,7 @@ struct pwc_scene {
 };
 
 void print_scene(struct pwc_scene *scene);
+void destroy_scene(struct pwc_scene *scene);
 struct pwc_scene *create_scene(void);
 
 #endif

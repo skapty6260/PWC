@@ -1,3 +1,4 @@
+#include <pwc/render/scene/node.h>
 #include <pwc/render/scene/scene.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,9 +13,20 @@ struct pwc_scene *create_scene(void) {
     return scene;
 }
 
+static void free_node_rec(SceneNodeT *node) {
+    if (!node) return;
+    for (int i = 0; i < node->num_child; i++) {
+        free_node_rec(node->child[i]);
+    }
+    free(node->child);
+    free(node->data);
+    free(node);
+}
+
 void destroy_scene(struct pwc_scene *scene) {
     if (!scene) return;
-    free(scene->root);
+    
+    free_node_rec(scene->root);
     free(scene);
 }
 
@@ -42,8 +54,10 @@ static void print_node(SceneNodeT *node, int depth) {
         }
         printf("Node type: %s, Data: %s\n", nodetype, (char *)node->data);
 
-        if (node->next != NULL) print_node(node->next, depth+1);
-        return;
+        // Print children from array
+        for (int i = 0; i < node->num_child; i++) {
+            print_node(node->child[i], depth + 1);
+        }
 }
 
 void print_scene(struct pwc_scene *scene) {

@@ -14,8 +14,10 @@ typedef struct SceneNode {
 
     void *data;
 
-    struct SceneNode *next;
-    struct SceneNode *prev;
+    struct SceneNode **child;
+    int num_child;
+    int capacity;
+    struct SceneNode *parent;
 } SceneNodeT;
 
 SceneNodeT *create_scene_node(enum SceneNodeType type, void *data);

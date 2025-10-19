@@ -30,9 +30,10 @@ int main(int argc, char **argv) {
     scene_add_child(root, ws2);
 
     SceneNodeT *bg2 = create_scene_node(SCENE_NODE_BACKGROUND, NULL);
-    scene_add_child(ws2, bg1);
+    scene_add_child(ws2, bg2);
 
     print_scene(scene);
+    destroy_scene(scene);
 
     struct pwc_vulkan *vulkan = calloc(1, sizeof(struct pwc_vulkan));
     vulkan->validate = true;
