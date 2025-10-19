@@ -1,6 +1,6 @@
 #include <assert.h>
 #include <dlfcn.h>
-#include <pwc/render/vulkan.h>
+#include <pwc/render/vulkan/vulkan.h>
 #include <pwc/render/vulkan/vk-core.h>
 #include <pwc/render/vulkan/vk-debug.h>
 #include <pwc/render/utils/macro.h>

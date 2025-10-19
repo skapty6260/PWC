@@ -40,7 +40,7 @@
 ///
 //  Includes
 //
-#include <pwc/render/esUtil.h>
+#include <pwc/render/utils/esUtil.h>
 #include <math.h>
 #include <string.h>
 

@@ -1,7 +1,7 @@
 #ifndef _PWC_RENDER_VULKAN_H
 #define _PWC_RENDER_VULKAN_H
 
-#include <pwc/render/demo.h>
+#include <pwc/render/vulkan/demo.h>
 #include <vulkan/vulkan.h>
 #include <bits/types/struct_timeval.h>
 #include <gbm.h>

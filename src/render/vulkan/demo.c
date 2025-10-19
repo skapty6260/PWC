@@ -1,8 +1,8 @@
 #include "pwc/render/vulkan/vk-core.h"
 #include <assert.h>
 #include <pwc/render/utils/linmath.h>
-#include <pwc/render/demo.h>
-#include <pwc/render/vulkan.h>
+#include <pwc/render/vulkan/demo.h>
+#include <pwc/render/vulkan/vulkan.h>
 #include <pwc/render/utils/macro.h>
 #include <stdarg.h>
 #include <stdint.h>

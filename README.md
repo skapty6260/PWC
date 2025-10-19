@@ -8,32 +8,12 @@ https://youtu.be/WNRQLessSms
 https://www.youtube.com/watch?v=g7Jlyk4Xp4o&list=PLA0dXqQjCx0RntJy1pqje9uHRF1Z5vZgA&index=3
 
 TODO:
-Делаю validationLayers, добавляю нормальную проверку на extensions,
-имплементирую логику:
-https://badland.io/vulkan-swapchain.md
-
-# Vulkan Extensions
-Extension VK_KHR_device_group_creation
-Extension VK_KHR_display
-Extension VK_KHR_external_fence_capabilities
-Extension VK_KHR_external_memory_capabilities
-Extension VK_KHR_external_semaphore_capabilities
-Extension VK_KHR_get_display_properties2
-Extension VK_KHR_get_physical_device_properties2
-Extension VK_KHR_get_surface_capabilities2
-Extension VK_KHR_surface
-Extension VK_KHR_surface_protected_capabilities
-Extension VK_KHR_wayland_surface
-Extension VK_KHR_xcb_surface
-Extension VK_KHR_xlib_surface
-Extension VK_EXT_acquire_drm_display
-Extension VK_EXT_acquire_xlib_display
-Extension VK_EXT_debug_report
-Extension VK_EXT_debug_utils
-Extension VK_EXT_direct_mode_display
-Extension VK_EXT_display_surface_counter
-Extension VK_EXT_headless_surface
-Extension VK_EXT_surface_maintenance1
-Extension VK_EXT_swapchain_colorspace
-Extension VK_KHR_portability_enumeration
-Extension VK_LUNARG_direct_driver_loading
+Делаю нормальные callback message для всех валидационных приколов.
+Делаю рефакторинг вулкана и демо.
+Делаю структуру рендера со сценами, функциями для запуска дисплея, cleanup и тд.
+Делаю запуск рендера, с другим тестовым самым простым демо (Можно тупо черный дисплей).
+Делаю дерево сцены (Root->workspaces->containers
+                                    ->background)
+Делаю инпут для переключения между workspaces для проверки вывода прототипов контейнеров разных цветов.
+Делаю методы рендера для кадров, damage, transactions
+Дальше реализую wayland server и dbus ipc 
