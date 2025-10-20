@@ -190,7 +190,7 @@ void demo_init(struct pwc_vulkan *vulkan) {
     vec3 up = {0.0f, 1.0f, 0.0};
 
     struct pwc_demo *demo = calloc(1, sizeof(struct pwc_demo));
-    vulkan->demo = demo;
+    // vulkan->demo = demo;
     demo->vulkan = vulkan;
     demo->presentMode = VK_PRESENT_MODE_FIFO_KHR;
     demo->demo_frame_count = INT32_MAX;
@@ -1366,7 +1366,7 @@ static void demo_prepare_swapchain(struct pwc_demo *demo) {
 
 void demo_prepare(struct pwc_vulkan *vulkan) {
     VkResult U_ASSERT_ONLY err;
-    struct pwc_demo *demo = vulkan->demo;
+    struct pwc_demo *demo = NULL; // vulkan->demo
     if (vulkan->cmd_pool == VK_NULL_HANDLE) {
         const VkCommandPoolCreateInfo cmd_pool_info = {
             .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,

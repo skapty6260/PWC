@@ -6,7 +6,8 @@ sources = files(
     'render/vulkan/vk-debug.c',
     'render/scene/scene.c',
     'render/scene/node.c',
-    'render/vulkan/demo.c',
+    'render/render.c',
+    # 'render/vulkan/demo.c',
 )
 
 wayland_server = dependency('wayland-server', version: '>=1.21.0')

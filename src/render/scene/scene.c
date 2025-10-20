@@ -27,7 +27,6 @@ void destroy_scene(struct pwc_scene *scene) {
     if (!scene) return;
     
     free_node_rec(scene->root);
-    free(scene);
 }
 
 static void print_node(SceneNodeT *node, int depth) {

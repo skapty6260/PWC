@@ -58,134 +58,10 @@ static uint32_t rate_device_suitability(VkPhysicalDevice physical_device, struct
     // Check extensions support
     if (!check_device_extensions_support(vulkan, physical_device)) {
         fprintf(stderr, "GPU doesn't support required extensions\n");
-        score = 0;
+        return 0;
     }
 
     return score;
-}
-
-void create_display_surface(struct pwc_vulkan *vulkan) {
-    VkResult U_ASSERT_ONLY err;
-    uint32_t display_count;
-    uint32_t mode_count;
-    uint32_t plane_count;
-    VkDisplayPropertiesKHR display_props;
-    VkDisplayKHR display;
-    VkDisplayModePropertiesKHR mode_props;
-    VkDisplayPlanePropertiesKHR *plane_props;
-    VkBool32 found_plane = VK_FALSE;
-    uint32_t plane_index;
-    VkExtent2D image_extent;
-    VkDisplaySurfaceCreateInfoKHR create_info;
-
-    // Get first display
-    display_count = 1;
-    err = vkGetPhysicalDeviceDisplayPropertiesKHR(vulkan->physicalDevice, &display_count, &display_props);
-    assert(!err || (err == VK_INCOMPLETE));
-
-    display = display_props.display;
-
-    // Get the first mode of the display
-    err = vkGetDisplayModePropertiesKHR(vulkan->physicalDevice, display, &mode_count, NULL);
-    assert(!err); // If this error asserts, you probaly not in TTY and your gpu device is busy now
-        
-    if (mode_count == 0) {
-    	fprintf(stderr, "Cannot find any mode for the display\n");
-	    exit(EXIT_FAILURE);
-    }
-
-    mode_count = 1;
-    err = vkGetDisplayModePropertiesKHR(vulkan->physicalDevice, display, &mode_count, &mode_props);
-    assert(!err || (err == VK_INCOMPLETE));
-
-    // Get the list of planes
-    if (vkGetPhysicalDeviceDisplayPlanePropertiesKHR(vulkan->physicalDevice, &plane_count, NULL) != VK_SUCCESS && plane_count == 0) {
-        fprintf(stderr, "Cannot find any plane\n");
-        exit(EXIT_FAILURE);
-    }
-
-    plane_props = malloc(sizeof(VkDisplayPlanePropertiesKHR) * plane_count);
-    assert(plane_props);
-
-    err = vkGetPhysicalDeviceDisplayPlanePropertiesKHR(vulkan->physicalDevice, &plane_count, plane_props);
-    assert(!err);
-
-    // Find a plane compatible with the display
-    for (plane_index = 0; plane_index < plane_count; plane_index++) {
-        uint32_t supported_count;
-        VkDisplayKHR *supported_displays;
-
-        // Skip planes that are bound to a different display
-        if ((plane_props[plane_index].currentDisplay != VK_NULL_HANDLE) && (plane_props[plane_index].currentDisplay != display)) {
-            continue;
-        }
-
-        err = vkGetDisplayPlaneSupportedDisplaysKHR(vulkan->physicalDevice, plane_index, &supported_count, NULL);
-        assert(!err);
-
-        if (supported_count == 0) {
-            continue;
-        }
-
-        supported_displays = malloc(sizeof(VkDisplayKHR) * supported_count);
-        assert(supported_displays);
-
-        err = vkGetDisplayPlaneSupportedDisplaysKHR(vulkan->physicalDevice, plane_index, &supported_count, supported_displays);
-        assert(!err);
-
-        for (uint32_t i = 0; i < supported_count; i++) {
-            if (supported_displays[i] == display) {
-                found_plane = VK_TRUE;
-                break;
-            }
-        }
-
-        free(supported_displays);
-
-        if (found_plane) {
-            break;
-        }
-    }
-
-    if (!found_plane) {
-        fprintf(stderr, "Failed to find a plane compatible with the display\n");
-        exit(EXIT_FAILURE);
-    }
-
-    VkDisplayPlaneCapabilitiesKHR plane_capabilities;
-    vkGetDisplayPlaneCapabilitiesKHR(vulkan->physicalDevice, mode_props.displayMode, plane_index, &plane_capabilities);
-    // Find supported alpha mode
-    VkDisplayPlaneAlphaFlagBitsKHR alphaMode = VK_DISPLAY_PLANE_ALPHA_OPAQUE_BIT_KHR;
-    VkDisplayPlaneAlphaFlagBitsKHR alphaModes[4] = {
-        VK_DISPLAY_PLANE_ALPHA_OPAQUE_BIT_KHR,
-        VK_DISPLAY_PLANE_ALPHA_GLOBAL_BIT_KHR,
-        VK_DISPLAY_PLANE_ALPHA_PER_PIXEL_BIT_KHR,
-        VK_DISPLAY_PLANE_ALPHA_PER_PIXEL_PREMULTIPLIED_BIT_KHR,
-    };
-    for (uint32_t i = 0; i < sizeof(alphaModes); i++) {
-        if (plane_capabilities.supportedAlpha & alphaModes[i]) {
-            alphaMode = alphaModes[i];
-            break;
-        }
-    }
-    image_extent.width = mode_props.parameters.visibleRegion.width;
-    image_extent.height = mode_props.parameters.visibleRegion.height;
-
-    create_info.sType = VK_STRUCTURE_TYPE_DISPLAY_SURFACE_CREATE_INFO_KHR;
-    create_info.pNext = NULL;
-    create_info.flags = 0;
-    create_info.displayMode = mode_props.displayMode;
-    create_info.planeIndex = plane_index;
-    create_info.planeStackIndex = plane_props[plane_index].currentStackIndex;
-    create_info.transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
-    create_info.alphaMode = alphaMode;
-    create_info.globalAlpha = 1.0f;
-    create_info.imageExtent = image_extent;
-
-    free(plane_props);
-
-    err = vkCreateDisplayPlaneSurfaceKHR(vulkan->instance, &create_info, NULL, &vulkan->surface);
-    assert(!err);
 }
 
 void pick_physical_device(struct pwc_vulkan *vulkan) {
@@ -287,7 +163,170 @@ void create_logical_device(struct pwc_vulkan *vulkan) {
     assert(!err);
 }
 
-static VkSurfaceFormatKHR pick_surface_format(const VkSurfaceFormatKHR *surface_formats, uint32_t count) {
+// ==============================================================================================
+//                                             SURFACE
+// ==============================================================================================
+void create_display_surface(struct pwc_vulkan *vulkan) {
+    VkResult U_ASSERT_ONLY err;
+    uint32_t display_count;
+    uint32_t mode_count;
+    uint32_t plane_count;
+    VkDisplayPropertiesKHR display_props;
+    VkDisplayKHR display;
+    VkDisplayModePropertiesKHR mode_props;
+    VkDisplayPlanePropertiesKHR *plane_props;
+    VkBool32 found_plane = VK_FALSE;
+    uint32_t plane_index;
+    VkExtent2D image_extent;
+    VkDisplaySurfaceCreateInfoKHR create_info;
+
+    // Get first display
+    display_count = 1;
+    err = vkGetPhysicalDeviceDisplayPropertiesKHR(vulkan->physicalDevice, &display_count, &display_props);
+    assert(!err || (err == VK_INCOMPLETE));
+
+    display = display_props.display;
+
+    // Get the first mode of the display
+    err = vkGetDisplayModePropertiesKHR(vulkan->physicalDevice, display, &mode_count, NULL);
+    assert(!err);
+        
+    if (mode_count == 0) {
+    	fprintf(stderr, "Cannot find any mode for the display\n");
+	    exit(EXIT_FAILURE);
+    }
+
+    mode_count = 1;
+    err = vkGetDisplayModePropertiesKHR(vulkan->physicalDevice, display, &mode_count, &mode_props);
+    assert(!err || (err == VK_INCOMPLETE));
+
+    // Get the list of planes
+    if (vkGetPhysicalDeviceDisplayPlanePropertiesKHR(vulkan->physicalDevice, &plane_count, NULL) != VK_SUCCESS && plane_count == 0) {
+        fprintf(stderr, "Cannot find any plane\n");
+        exit(EXIT_FAILURE);
+    }
+
+    plane_props = malloc(sizeof(VkDisplayPlanePropertiesKHR) * plane_count);
+    assert(plane_props);
+
+    err = vkGetPhysicalDeviceDisplayPlanePropertiesKHR(vulkan->physicalDevice, &plane_count, plane_props);
+    assert(!err);
+
+    // Find a plane compatible with the display
+    for (plane_index = 0; plane_index < plane_count; plane_index++) {
+        uint32_t supported_count;
+        VkDisplayKHR *supported_displays;
+
+        // Skip planes that are bound to a different display
+        if ((plane_props[plane_index].currentDisplay != VK_NULL_HANDLE) && (plane_props[plane_index].currentDisplay != display)) {
+            continue;
+        }
+
+        err = vkGetDisplayPlaneSupportedDisplaysKHR(vulkan->physicalDevice, plane_index, &supported_count, NULL);
+        assert(!err);
+
+        if (supported_count == 0) {
+            continue;
+        }
+
+        supported_displays = malloc(sizeof(VkDisplayKHR) * supported_count);
+        assert(supported_displays);
+
+        err = vkGetDisplayPlaneSupportedDisplaysKHR(vulkan->physicalDevice, plane_index, &supported_count, supported_displays);
+        assert(!err);
+
+        for (uint32_t i = 0; i < supported_count; i++) {
+            if (supported_displays[i] == display) {
+                found_plane = VK_TRUE;
+                break;
+            }
+        }
+
+        free(supported_displays);
+
+        if (found_plane) {
+            break;
+        }
+    }
+
+    if (!found_plane) {
+        fprintf(stderr, "Failed to find a plane compatible with the display\n");
+        exit(EXIT_FAILURE);
+    }
+
+    VkDisplayPlaneCapabilitiesKHR plane_capabilities;
+    vkGetDisplayPlaneCapabilitiesKHR(vulkan->physicalDevice, mode_props.displayMode, plane_index, &plane_capabilities);
+    // Find supported alpha mode
+    VkDisplayPlaneAlphaFlagBitsKHR alphaMode = VK_DISPLAY_PLANE_ALPHA_OPAQUE_BIT_KHR;
+    VkDisplayPlaneAlphaFlagBitsKHR alphaModes[4] = {
+        VK_DISPLAY_PLANE_ALPHA_OPAQUE_BIT_KHR,
+        VK_DISPLAY_PLANE_ALPHA_GLOBAL_BIT_KHR,
+        VK_DISPLAY_PLANE_ALPHA_PER_PIXEL_BIT_KHR,
+        VK_DISPLAY_PLANE_ALPHA_PER_PIXEL_PREMULTIPLIED_BIT_KHR,
+    };
+    for (uint32_t i = 0; i < sizeof(alphaModes); i++) {
+        if (plane_capabilities.supportedAlpha & alphaModes[i]) {
+            alphaMode = alphaModes[i];
+            break;
+        }
+    }
+    image_extent.width = mode_props.parameters.visibleRegion.width;
+    image_extent.height = mode_props.parameters.visibleRegion.height;
+
+    create_info.sType = VK_STRUCTURE_TYPE_DISPLAY_SURFACE_CREATE_INFO_KHR;
+    create_info.pNext = NULL;
+    create_info.flags = 0;
+    create_info.displayMode = mode_props.displayMode;
+    create_info.planeIndex = plane_index;
+    create_info.planeStackIndex = plane_props[plane_index].currentStackIndex;
+    create_info.transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    create_info.alphaMode = alphaMode;
+    create_info.globalAlpha = 1.0f;
+    create_info.imageExtent = image_extent;
+
+    free(plane_props);
+
+    err = vkCreateDisplayPlaneSurfaceKHR(vulkan->instance, &create_info, NULL, &vulkan->surface);
+    assert(!err);
+}
+
+// ==============================================================================================
+//                                            SWAPCHAIN
+// ==============================================================================================
+SwapChainSupportDetails query_swap_chain_support(struct pwc_vulkan *vulkan) {
+    SwapChainSupportDetails details;
+
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vulkan->physicalDevice, vulkan->surface, &details.capabilities);
+
+    uint32_t format_count;
+    vkGetPhysicalDeviceSurfaceFormatsKHR(vulkan->physicalDevice, vulkan->surface, &format_count, NULL);
+    details.format_count = format_count;
+    VkSurfaceFormatKHR formats[format_count];
+    details.formats = formats;
+    if (format_count != 0) {
+        vkGetPhysicalDeviceSurfaceFormatsKHR(vulkan->physicalDevice, vulkan->surface, &format_count, details.formats);
+    }
+
+    uint32_t present_count;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(vulkan->physicalDevice, vulkan->surface, &present_count, NULL);
+    details.present_count = present_count;
+    VkPresentModeKHR present_modes[present_count];
+    details.present_modes = present_modes;
+    if (present_count != 0) {
+        vkGetPhysicalDeviceSurfacePresentModesKHR(vulkan->physicalDevice, vulkan->surface, &present_count, details.present_modes);
+    }
+
+    // Check if supports present
+    VkBool32 *supports_present = (VkBool32 *)malloc(vulkan->queue_family_count * sizeof(VkBool32));
+    details.supports_present = supports_present;
+    for (uint32_t i = 0; i < vulkan->queue_family_count; i++) {
+        vkGetPhysicalDeviceSurfaceSupportKHR(vulkan->physicalDevice, i, vulkan->surface, &supports_present[i]);
+    }
+
+    return details;
+}
+
+VkSurfaceFormatKHR choose_swap_surface_mode(const VkSurfaceFormatKHR *surface_formats, uint32_t count) {
     // Prefer non-SRGB formats
     for (uint32_t i = 0; i < count; i++) {
         const VkFormat format = surface_formats[i].format;
@@ -302,8 +341,158 @@ static VkSurfaceFormatKHR pick_surface_format(const VkSurfaceFormatKHR *surface_
 
     printf("Can't find our preferred formats... Falling back to first exposed format. Rendering may be incorrect.\n");
 
-    assert(count >= 1);
+    // assert(count >= 1);
     return surface_formats[0];
+}
+
+VkPresentModeKHR choose_swap_present_mode(uint32_t modes_count, VkPresentModeKHR *available_modes) {
+    return VK_PRESENT_MODE_FIFO_KHR;
+}
+
+VkExtent2D choose_swap_surface_extent(VkSurfaceCapabilitiesKHR capabilities) {
+    VkExtent2D swapchainExtent;
+    // width and height are either both 0xFFFFFFFF, or both not 0xFFFFFFFF.
+    if (capabilities.currentExtent.width == 0xFFFFFFFF) {
+        // If the surface size is undefined, the size is set to the size
+        // of the images requested, which must fit within the minimum and
+        // maximum values.
+        // swapchainExtent.width = demo->width;
+        // swapchainExtent.height = demo->height;
+
+        if (swapchainExtent.width < capabilities.minImageExtent.width) {
+            swapchainExtent.width = capabilities.minImageExtent.width;
+        } else if (swapchainExtent.width > capabilities.maxImageExtent.width) {
+            swapchainExtent.width = capabilities.maxImageExtent.width;
+        }
+
+        if (swapchainExtent.height < capabilities.minImageExtent.height) {
+            swapchainExtent.height = capabilities.minImageExtent.height;
+        } else if (swapchainExtent.height > capabilities.maxImageExtent.height) {
+            swapchainExtent.height = capabilities.maxImageExtent.height;
+        }
+    } else {
+        // If the surface size is defined, the swap chain size must match
+        swapchainExtent = capabilities.currentExtent;
+        // demo->width = surfCapabilities.currentExtent.width;
+        // demo->height = surfCapabilities.currentExtent.height;
+    }
+
+    return swapchainExtent;
+}
+
+VkCompositeAlphaFlagBitsKHR choose_alpha_mode(VkSurfaceCapabilitiesKHR capabilities) {
+    VkCompositeAlphaFlagBitsKHR compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    VkCompositeAlphaFlagBitsKHR compositeAlphaFlags[4] = {
+        VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+        VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR,
+        VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR,
+        VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR,
+    };
+    for (uint32_t i = 0; i < ARRAY_SIZE(compositeAlphaFlags); i++) {
+        if (capabilities.supportedCompositeAlpha & compositeAlphaFlags[i]) {
+            compositeAlpha = compositeAlphaFlags[i];
+            break;
+        }
+    }
+
+    return compositeAlpha;
+}
+
+VkSurfaceTransformFlagsKHR choose_pre_transform(VkSurfaceCapabilitiesKHR capabilities) {
+    VkSurfaceTransformFlagsKHR pre_transform;
+    if (capabilities.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) {
+        pre_transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    } else {
+        pre_transform = capabilities.currentTransform;
+    }
+
+    return pre_transform;
+}
+
+void create_swapchain(struct pwc_vulkan *vulkan) {
+    VkResult U_ASSERT_ONLY err;
+    SwapChainSupportDetails swapchain_details = query_swap_chain_support(vulkan);
+    
+    VkSurfaceFormatKHR surface_format = choose_swap_surface_mode(swapchain_details.formats, swapchain_details.format_count);
+    VkPresentModeKHR present_mode = choose_swap_present_mode(swapchain_details.present_count, swapchain_details.present_modes);
+    VkExtent2D extent = choose_swap_surface_extent(swapchain_details.capabilities);
+    VkCompositeAlphaFlagBitsKHR composite_alpha = choose_alpha_mode(swapchain_details.capabilities);
+    VkSurfaceTransformFlagsKHR pre_transform = choose_pre_transform(swapchain_details.capabilities);
+
+    uint32_t image_count = swapchain_details.capabilities.minImageCount + 1;
+    if (swapchain_details.capabilities.maxImageCount > 0 && image_count > swapchain_details.capabilities.maxImageCount) {
+        image_count = swapchain_details.capabilities.maxImageCount;
+    }
+
+    VkSwapchainCreateInfoKHR swapchain_ci = {
+        .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+        .surface = vulkan->surface,
+        .minImageCount = image_count,
+        .imageFormat = surface_format.format,
+        .imageColorSpace = surface_format.colorSpace,
+        .imageExtent = extent,
+        .imageArrayLayers = 1,
+        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .presentMode = present_mode,
+        .pQueueFamilyIndices = NULL,
+        .queueFamilyIndexCount = 0,
+        .clipped = VK_FALSE, // Can't clip when we took all display for render
+        .compositeAlpha = composite_alpha,
+        .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .oldSwapchain = VK_NULL_HANDLE,
+        .preTransform = pre_transform
+    };
+
+    // Seearch for a graphics and a present queue in the array of queue
+    // families, try to find one that supports both
+    uint32_t graphics_queue_family_index = UINT32_MAX;
+    uint32_t present_queue_family_index = UINT32_MAX;
+    for (uint32_t i = 0; i < vulkan->queue_family_count; i++) {
+        if ((vulkan->queue_props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0) {
+            if (graphics_queue_family_index == UINT32_MAX) {
+                graphics_queue_family_index = i;
+            }
+
+            if (swapchain_details.supports_present[i] == VK_TRUE) {
+                graphics_queue_family_index = i;
+                present_queue_family_index = i;
+                break;
+            }
+        }
+    }
+
+    if (present_queue_family_index == UINT32_MAX) {
+        // If didn't find a queue that supports both graphics and present, then
+        // find a separate present queue.
+        for (uint32_t i = 0; i < vulkan->queue_family_count; ++i) {
+            present_queue_family_index = i;
+            break;
+        }
+    }
+
+    // Generate error if couldn't find both graphics and present queue
+    if (graphics_queue_family_index == UINT32_MAX || present_queue_family_index == UINT32_MAX) {
+        fprintf(stderr, "[Swapchain initialization failure]\nCouldn't find both graphics and present queues\n");
+        exit(EXIT_FAILURE);
+    }
+
+    vulkan->graphics_queue_family_index = graphics_queue_family_index;
+    vulkan->present_queue_family_index = present_queue_family_index;
+    vulkan->separate_present_queue = (vulkan->graphics_queue_family_index != vulkan->present_queue_family_index);
+
+    // if (vulkan->separate_present_queue) {
+    //     swapchain_ci.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+    // } else {
+    //     swapchain_ci.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    // }
+
+    create_logical_device(vulkan);
+
+    err = vkCreateSwapchainKHR(vulkan->device, &swapchain_ci, NULL, &vulkan->swapchain);
+    assert(!err);
+
+    printf("Swapchain created.");
+    exit(EXIT_SUCCESS); 
 }
 
 void init_swapchain(struct pwc_vulkan *vulkan) {
@@ -371,18 +560,36 @@ void init_swapchain(struct pwc_vulkan *vulkan) {
     VkSurfaceFormatKHR *surface_formats = (VkSurfaceFormatKHR *)malloc(format_count * sizeof(VkSurfaceFormatKHR));
     err = vkGetPhysicalDeviceSurfaceFormatsKHR(vulkan->physicalDevice, vulkan->surface, &format_count, surface_formats);
     assert(!err);
-    VkSurfaceFormatKHR surface_format = pick_surface_format(surface_formats, format_count);
-    vulkan->format = surface_format.format;
-    vulkan->color_space = surface_format.colorSpace;
+    VkSurfaceFormatKHR surface_format = choose_swap_surface_mode(surface_formats, format_count);
+    // vulkan->format = surface_format.format;
+    // vulkan->color_space = surface_format.colorSpace;
     free(surface_formats);
-
-    vulkan->demo->quit = false;
-    vulkan->demo->demo_current_frame = 0;
-
-    vulkan->demo->first_swapchain_frame = true;
+    
+    // Create command pool
+    VkCommandPoolCreateInfo pool_ci = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .queueFamilyIndex = vulkan->graphics_queue_family_index,
+        .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,  // Allow individual resets
+    };
+    err = vkCreateCommandPool(vulkan->device, &pool_ci, NULL, &vulkan->cmd_pool);
+    assert(!err);
+    // Allocate command buffers (one per FRAME_LAG)
+    VkCommandBufferAllocateInfo alloc_ci = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool = vulkan->cmd_pool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = FRAME_LAG,
+    };
+    VkCommandBuffer cmd_buffers[FRAME_LAG];
+    err = vkAllocateCommandBuffers(vulkan->device, &alloc_ci, cmd_buffers);
+    assert(!err);
+    // Assign to submission resources
+    for (int i = 0; i < FRAME_LAG; i++) {
+        vulkan->submission_resources[i].cmd = cmd_buffers[i];
+    }
 
     // Get Memory information and properties
-    vkGetPhysicalDeviceMemoryProperties(vulkan->physicalDevice, &vulkan->demo->memory_properties);
+    vkGetPhysicalDeviceMemoryProperties(vulkan->physicalDevice, &vulkan->memory_properties);
 }
 
 static VkBool32 check_validation_layers(uint32_t check_count, char **check_names, uint32_t layer_count, VkLayerProperties *layers) {
@@ -523,4 +730,42 @@ void create_vulkan_instance(struct pwc_vulkan *vulkan) {
         fprintf(stderr, "vkCreateInstanceFailed\n");
         exit(EXIT_FAILURE);
     }
+}
+
+// Prepares cmd_pool, render_pass, render_pipeline
+void prepare_vulkan(struct pwc_vulkan *vulkan) {
+    VkResult U_ASSERT_ONLY err;
+
+    if (vulkan->cmd_pool == VK_NULL_HANDLE) {
+        const VkCommandPoolCreateInfo cmd_pool_info = {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            .pNext = NULL,
+            .queueFamilyIndex = vulkan->graphics_queue_family_index,
+            .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+        };
+        err = vkCreateCommandPool(vulkan->device, &cmd_pool_info, NULL, &vulkan->cmd_pool);
+        assert(!err);
+    }
+
+    const VkCommandBufferAllocateInfo cmd = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .pNext = NULL,
+        .commandPool = vulkan->cmd_pool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1,
+    };
+    err = vkAllocateCommandBuffers(vulkan->device, &cmd, &vulkan->cmd);
+    assert(!err);
+
+    VkCommandBufferBeginInfo cmd_buf_info = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .pNext = NULL,
+        .flags = 0,
+        .pInheritanceInfo = NULL,
+    };
+    err = vkBeginCommandBuffer(vulkan->cmd, &cmd_buf_info);
+    assert(!err);
+
+    // prepare render pass
+    // prepare pipeline
 }
