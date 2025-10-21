@@ -166,6 +166,7 @@ void create_logical_device(struct pwc_vulkan *vulkan) {
 // ==============================================================================================
 //                                             SURFACE
 // ==============================================================================================
+
 void create_display_surface(struct pwc_vulkan *vulkan) {
     VkResult U_ASSERT_ONLY err;
     uint32_t display_count;
@@ -293,6 +294,7 @@ void create_display_surface(struct pwc_vulkan *vulkan) {
 // ==============================================================================================
 //                                            SWAPCHAIN
 // ==============================================================================================
+
 SwapChainSupportDetails query_swap_chain_support(struct pwc_vulkan *vulkan) {
     SwapChainSupportDetails details;
 
@@ -380,7 +382,7 @@ VkExtent2D choose_swap_surface_extent(VkSurfaceCapabilitiesKHR capabilities) {
     return swapchainExtent;
 }
 
-VkCompositeAlphaFlagBitsKHR choose_alpha_mode(VkSurfaceCapabilitiesKHR capabilities) {
+VkCompositeAlphaFlagBitsKHR choose_swap_alpha_mode(VkSurfaceCapabilitiesKHR capabilities) {
     VkCompositeAlphaFlagBitsKHR compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     VkCompositeAlphaFlagBitsKHR compositeAlphaFlags[4] = {
         VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
@@ -398,7 +400,7 @@ VkCompositeAlphaFlagBitsKHR choose_alpha_mode(VkSurfaceCapabilitiesKHR capabilit
     return compositeAlpha;
 }
 
-VkSurfaceTransformFlagsKHR choose_pre_transform(VkSurfaceCapabilitiesKHR capabilities) {
+VkSurfaceTransformFlagsKHR choose_swap_pre_transform(VkSurfaceCapabilitiesKHR capabilities) {
     VkSurfaceTransformFlagsKHR pre_transform;
     if (capabilities.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) {
         pre_transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
@@ -409,6 +411,56 @@ VkSurfaceTransformFlagsKHR choose_pre_transform(VkSurfaceCapabilitiesKHR capabil
     return pre_transform;
 }
 
+uint32_t get_swap_image_count(VkSurfaceCapabilitiesKHR capabilities) {
+    uint32_t image_count = capabilities.minImageCount + 1;
+    if (capabilities.maxImageCount > 0 && image_count > capabilities.maxImageCount) {
+        image_count = capabilities.maxImageCount;
+    }
+
+    return image_count;
+}
+
+QueueFamilyData get_queue_family_data(struct pwc_vulkan *vulkan, VkBool32 *supports_present) {
+    QueueFamilyData data;
+
+    uint32_t graphics_queue_family_index = UINT32_MAX;
+    uint32_t present_queue_family_index = UINT32_MAX;
+    for (uint32_t i = 0; i < vulkan->queue_family_count; i++) {
+            if ((vulkan->queue_props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0) {
+                if (graphics_queue_family_index == UINT32_MAX) {
+                    graphics_queue_family_index = i;
+                }
+
+                if (supports_present[i] == VK_TRUE) {
+                    graphics_queue_family_index = i;
+                    present_queue_family_index = i;
+                    break;
+                }
+            }
+    }
+
+    if (present_queue_family_index == UINT32_MAX) {
+        // If didn't find a queue that supports both graphics and present, then
+        // find a separate present queue.
+        for (uint32_t i = 0; i < vulkan->queue_family_count; ++i) {
+            present_queue_family_index = i;
+            break;
+        }
+    }
+
+    // Generate error if couldn't find both graphics and present queue
+    if (graphics_queue_family_index == UINT32_MAX || present_queue_family_index == UINT32_MAX) {
+        fprintf(stderr, "[Swapchain initialization failure]\nCouldn't find both graphics and present queues\n");
+        exit(EXIT_FAILURE);
+    }
+
+    data.graphics_queue_family_index = graphics_queue_family_index;
+    data.present_queue_family_index = present_queue_family_index;
+    data.separate_present_queue = (graphics_queue_family_index != present_queue_family_index);
+
+    return data;
+}
+
 void create_swapchain(struct pwc_vulkan *vulkan) {
     VkResult U_ASSERT_ONLY err;
     SwapChainSupportDetails swapchain_details = query_swap_chain_support(vulkan);
@@ -416,13 +468,9 @@ void create_swapchain(struct pwc_vulkan *vulkan) {
     VkSurfaceFormatKHR surface_format = choose_swap_surface_mode(swapchain_details.formats, swapchain_details.format_count);
     VkPresentModeKHR present_mode = choose_swap_present_mode(swapchain_details.present_count, swapchain_details.present_modes);
     VkExtent2D extent = choose_swap_surface_extent(swapchain_details.capabilities);
-    VkCompositeAlphaFlagBitsKHR composite_alpha = choose_alpha_mode(swapchain_details.capabilities);
-    VkSurfaceTransformFlagsKHR pre_transform = choose_pre_transform(swapchain_details.capabilities);
-
-    uint32_t image_count = swapchain_details.capabilities.minImageCount + 1;
-    if (swapchain_details.capabilities.maxImageCount > 0 && image_count > swapchain_details.capabilities.maxImageCount) {
-        image_count = swapchain_details.capabilities.maxImageCount;
-    }
+    VkCompositeAlphaFlagBitsKHR composite_alpha = choose_swap_alpha_mode(swapchain_details.capabilities);
+    VkSurfaceTransformFlagsKHR pre_transform = choose_swap_pre_transform(swapchain_details.capabilities);
+    uint32_t image_count = get_swap_image_count(swapchain_details.capabilities);
 
     VkSwapchainCreateInfoKHR swapchain_ci = {
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
@@ -443,42 +491,10 @@ void create_swapchain(struct pwc_vulkan *vulkan) {
         .preTransform = pre_transform
     };
 
-    // Seearch for a graphics and a present queue in the array of queue
-    // families, try to find one that supports both
-    uint32_t graphics_queue_family_index = UINT32_MAX;
-    uint32_t present_queue_family_index = UINT32_MAX;
-    for (uint32_t i = 0; i < vulkan->queue_family_count; i++) {
-        if ((vulkan->queue_props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0) {
-            if (graphics_queue_family_index == UINT32_MAX) {
-                graphics_queue_family_index = i;
-            }
-
-            if (swapchain_details.supports_present[i] == VK_TRUE) {
-                graphics_queue_family_index = i;
-                present_queue_family_index = i;
-                break;
-            }
-        }
-    }
-
-    if (present_queue_family_index == UINT32_MAX) {
-        // If didn't find a queue that supports both graphics and present, then
-        // find a separate present queue.
-        for (uint32_t i = 0; i < vulkan->queue_family_count; ++i) {
-            present_queue_family_index = i;
-            break;
-        }
-    }
-
-    // Generate error if couldn't find both graphics and present queue
-    if (graphics_queue_family_index == UINT32_MAX || present_queue_family_index == UINT32_MAX) {
-        fprintf(stderr, "[Swapchain initialization failure]\nCouldn't find both graphics and present queues\n");
-        exit(EXIT_FAILURE);
-    }
-
-    vulkan->graphics_queue_family_index = graphics_queue_family_index;
-    vulkan->present_queue_family_index = present_queue_family_index;
-    vulkan->separate_present_queue = (vulkan->graphics_queue_family_index != vulkan->present_queue_family_index);
+    QueueFamilyData queue_family_data = get_queue_family_data(vulkan, swapchain_details.supports_present);
+    vulkan->present_queue_family_index = queue_family_data.present_queue_family_index;
+    vulkan->graphics_queue_family_index = queue_family_data.graphics_queue_family_index;
+    vulkan->separate_present_queue = queue_family_data.separate_present_queue;
 
     // if (vulkan->separate_present_queue) {
     //     swapchain_ci.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
@@ -491,8 +507,94 @@ void create_swapchain(struct pwc_vulkan *vulkan) {
     err = vkCreateSwapchainKHR(vulkan->device, &swapchain_ci, NULL, &vulkan->swapchain);
     assert(!err);
 
-    printf("Swapchain created.");
-    exit(EXIT_SUCCESS); 
+    vkGetSwapchainImagesKHR(vulkan->device, vulkan->swapchain, &image_count, NULL);
+    vulkan->swapchain_images = (VkImage*)malloc(sizeof(VkImage) * image_count);;
+
+    vkGetSwapchainImagesKHR(vulkan->device, vulkan->swapchain, &image_count, vulkan->swapchain_images);
+    vulkan->swapchain_image_count = image_count;
+    
+    vulkan->swapchain_extent = extent;
+    vulkan->swapchain_image_format = surface_format.format;
+}
+
+void create_image_views(struct pwc_vulkan *vulkan) {
+    VkResult U_ASSERT_ONLY err;
+    vulkan->swapchain_image_views = (VkImageView*)malloc(sizeof(VkImageView) * vulkan->swapchain_image_count);
+
+    for (uint32_t i = 0; i < vulkan->swapchain_image_count; i++) {
+        VkImageViewCreateInfo create_info = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .image = vulkan->swapchain_images[i],
+            .viewType = VK_IMAGE_VIEW_TYPE_2D,
+            .format = vulkan->swapchain_image_format,
+            .components = {
+                VK_COMPONENT_SWIZZLE_IDENTITY,
+                VK_COMPONENT_SWIZZLE_IDENTITY,
+                VK_COMPONENT_SWIZZLE_IDENTITY,
+                VK_COMPONENT_SWIZZLE_IDENTITY,
+            },
+            .subresourceRange = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1
+            },
+        };
+
+        err = vkCreateImageView(vulkan->device, &create_info, NULL, &vulkan->swapchain_image_views[i]);
+    }
+}
+
+// ==============================================================================================
+//                                            PIPELINE
+// ==============================================================================================
+typedef struct ShaderFile {
+  size_t size;
+  char *code;
+} ShaderFile;
+
+VkShaderModule createShaderModule(struct pwc_vulkan *vulkan, ShaderFile *shader_file) {
+  VkShaderModuleCreateInfo create_info = {
+    .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+    .codeSize = shader_file->size,
+    .pCode = (uint32_t*)shader_file->code
+  };
+
+  VkShaderModule shader_module;
+  if (vkCreateShaderModule(vulkan->device, &create_info, NULL, &shader_module) != VK_SUCCESS) {
+    printf("failed to create shader module!\n");
+    exit(7);
+  }
+
+  return shader_module;
+}
+
+void read_file(const char *path, ShaderFile *shader) {
+    FILE *pfile;
+
+    pfile = fopen(path, "rb");
+    if (pfile == NULL) {
+        fprintf(stderr, "Failed to open %s\n", path);
+    }
+
+    fseek(pfile, 0L, SEEK_END);
+    shader->size = ftell(pfile);
+
+    fseek(pfile, 0L, SEEK_SET);
+
+    shader->code = (char*)malloc(sizeof(char) * shader->size);
+    size_t readCount = fread(shader->code, shader->size, sizeof(char), pfile);
+    printf("ReadCount: %ld\n", readCount);
+
+    fclose(pfile);
+}
+
+void create_graphics_pipeline(struct pwc_vulkan *vulkan) {
+    ShaderFile vertShader = {0};
+    ShaderFile fragShader = {0};
+    read_file("/home/dietcokelover/projects/pwc/include/pwc/render/shaders/frag.spv", &fragShader);
+    read_file("/home/dietcokelover/projects/pwc/include/pwc/render/shaders/vert.spv", &vertShader);
 }
 
 void init_swapchain(struct pwc_vulkan *vulkan) {

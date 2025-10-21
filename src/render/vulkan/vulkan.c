@@ -46,7 +46,8 @@ int init_vulkan(struct pwc_vulkan *vulkan) {
     pick_physical_device(vulkan);
     create_display_surface(vulkan);
     create_swapchain(vulkan);
-    // init_swapchain(vulkan);
+    create_image_views(vulkan);
+    create_graphics_pipeline(vulkan);
 
     return EXIT_SUCCESS;
 };

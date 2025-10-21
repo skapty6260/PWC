@@ -8,6 +8,7 @@
 #include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <vulkan/vulkan_core.h>
 
 #define APP_NAME "pwc vulkan wayland compositor"
 
@@ -21,35 +22,45 @@ typedef struct SubmissionResources {
     VkSemaphore image_acquired_semaphore;
 } SubmissionResourcesT;
 
+typedef struct QueueFamilyData {
+    uint32_t graphics_queue_family_index;
+    uint32_t present_queue_family_index;
+    bool separate_present_queue;
+} QueueFamilyData;
+
 struct pwc_vulkan {
     VkSurfaceKHR surface;
-    // struct pwc_demo *demo;
-    VkPhysicalDeviceMemoryProperties memory_properties;
-
     VkInstance instance;
     VkDevice device;
-    VkDisplayKHR display;
+    VkPhysicalDevice physicalDevice;
+
+    uint32_t graphics_queue_family_index;
+    uint32_t present_queue_family_index;
+    uint32_t queue_family_count;
+    bool separate_present_queue;
+    VkQueue graphics_queue;
+    VkQueue present_queue;
+
+    VkSwapchainKHR swapchain;
+    uint32_t swapchain_image_count;
+    VkImage *swapchain_images;
+    VkFormat swapchain_image_format;
+    VkExtent2D swapchain_extent;
+    VkImageView *swapchain_image_views;
+
+    // IDK below
+    VkPhysicalDeviceMemoryProperties memory_properties;
     VkBuffer buffer;
     VkDeviceMemory mem;
     VkDescriptorSet descriptor_set;
 
-    VkPhysicalDevice physicalDevice;
-    VkQueue graphics_queue;
-    VkQueue present_queue;
-    uint32_t graphics_queue_family_index;
-    uint32_t present_queue_family_index;
-    uint32_t queue_family_count;
     VkPhysicalDeviceProperties gpu_props;
     VkQueueFamilyProperties *queue_props;
-    bool separate_present_queue;
 
-    VkSwapchainKHR swapchain;
+
     SubmissionResourcesT submission_resources[FRAME_LAG];
     uint32_t current_submission_index;
 
-    uint32_t swapchain_image_count;
-    VkImage *swapchain_images;  // Array of swapchain images
-    VkImageView *swapchain_image_views;  // Array of image views
     VkSemaphore *image_acquired_semaphores;  // Per image
     VkSemaphore *draw_complete_semaphores;   // Per image
     VkFence *fences;  // Per submission (FRAME_LAG)
@@ -75,7 +86,6 @@ struct pwc_vulkan {
     char *extension_names[64];
     char *enabled_layers[64];
 
-    // VkFormat format;
     // VkColorSpaceKHR color_space;
 
     bool validate;
